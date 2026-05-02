@@ -118,6 +118,7 @@ enum ActionType {
     ACT_HEAL,
     ACT_SKIP,
     ACT_ULTIMATE,     // needs Solar Core + Lunar Blade
+    ACT_PICKUP,       // pick up artifact from arena
     ACT_QUIT          // player quit signal
 };
 

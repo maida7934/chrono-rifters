@@ -25,5 +25,8 @@ hip_bin: $(HIP_SRC)
 asp_bin: $(ASP_SRC)
 	$(CXX) $(CXXFLAGS) $(INC) $^ -o $@ $(LIBS)
 
+test_deadlock: test_deadlock.cpp $(SHARED_SRC)
+	$(CXX) $(CXXFLAGS) $(INC) $^ -o $@ -lrt -lpthread
+
 clean:
-	rm -f arbiter_bin hip_bin asp_bin
+	rm -f arbiter_bin hip_bin asp_bin test_deadlock

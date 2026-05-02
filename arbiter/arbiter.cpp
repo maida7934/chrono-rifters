@@ -348,8 +348,6 @@ static void apply_action(ActionRequest& req) {
                  actor.name, WEAPON_TABLE[req.weapon].name,
                  target.name, dmg);
         g_state->log.push(msg);
-
-        // High-tier weapons (damage >= 45) have a 30% stun chance
         if (target.alive && dmg >= 45 && (rand() % 100) < 30) {
             deliver_stun(req.target_id);
         }
@@ -412,7 +410,6 @@ static void apply_action(ActionRequest& req) {
         bool got_sc = artifact_acquire(req.entity_id, WPN_SOLAR_CORE);
         bool got_lb = artifact_acquire(req.entity_id, WPN_LUNAR_BLADE);
         if (!got_sc || !got_lb) {
-            // Could not lock both — release whatever we got
             if (got_sc) artifact_release(req.entity_id, WPN_SOLAR_CORE);
             if (got_lb) artifact_release(req.entity_id, WPN_LUNAR_BLADE);
             snprintf(msg, LOG_LEN,
@@ -422,8 +419,26 @@ static void apply_action(ActionRequest& req) {
             break;
         }
 
-        snprintf(msg, LOG_LEN, "[%s] ★ ULTIMATE ABILITY!", actor.name);
+        snprintf(msg, LOG_LEN, "[%s] ★ ULTIMATE — CHRONO BURST!", actor.name);
         g_state->log.push(msg);
+
+        // AOE damage: deal 50% of each enemy's max HP to ALL alive enemies
+        for (int i = 0; i < g_state->num_enemies; ++i) {
+            Entity& e = g_state->entities[MAX_PLAYERS + i];
+            if (!e.alive) continue;
+            int aoe_dmg = e.max_hp / 2;
+            e.hp -= aoe_dmg;
+            if (e.hp < 0) e.hp = 0;
+            snprintf(msg, LOG_LEN, "  ★ [%s] takes %d CHRONO damage!", e.name, aoe_dmg);
+            g_state->log.push(msg);
+            if (e.hp == 0) {
+                e.alive = false;
+                ++g_state->total_enemies_killed;
+                snprintf(msg, LOG_LEN, "  ★ [%s] is VAPORIZED!", e.name);
+                g_state->log.push(msg);
+                artifact_release_all(MAX_PLAYERS + i);
+            }
+        }
 
         // Suspend ASP with SIGSTOP (Section 8 — signal-only enforcement)
         if (g_asp_pid > 0) kill(g_asp_pid, SIGSTOP);
@@ -437,6 +452,41 @@ static void apply_action(ActionRequest& req) {
         // Release artifacts after triggering
         artifact_release(req.entity_id, WPN_SOLAR_CORE);
         artifact_release(req.entity_id, WPN_LUNAR_BLADE);
+        actor.stamina = 0;
+        break;
+    }
+
+    case ACT_PICKUP: {
+        // Pick up an artifact from the arena (Section 7)
+        if (req.weapon == WPN_NONE) break;
+        WeaponID wpn = req.weapon;
+
+        if (!WEAPON_TABLE[wpn].is_artifact) {
+            snprintf(msg, LOG_LEN, "[%s] %s is not an artifact!",
+                     actor.name, WEAPON_TABLE[wpn].name);
+            g_state->log.push(msg);
+            break;
+        }
+
+        // Lock resource table and attempt to acquire
+        if (!artifact_acquire(req.entity_id, wpn)) {
+            // Blocked — wait registered in WaitForGraph
+            actor.stamina = 0;
+            break;
+        }
+
+        // Add to inventory via allocator (enforces 20-slot hard limit)
+        bool added = allocator_add(actor.inventory, wpn);
+        if (!added) {
+            artifact_release(req.entity_id, wpn);
+            snprintf(msg, LOG_LEN, "[%s] PICKUP %s FAILED: inventory full!",
+                     actor.name, WEAPON_TABLE[wpn].name);
+            g_state->log.push(msg);
+        } else {
+            snprintf(msg, LOG_LEN, "[%s] picked up %s!",
+                     actor.name, WEAPON_TABLE[wpn].name);
+            g_state->log.push(msg);
+        }
         actor.stamina = 0;
         break;
     }

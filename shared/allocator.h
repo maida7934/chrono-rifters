@@ -17,6 +17,14 @@
 inline bool allocator_add(Inventory& inv, WeaponID id) {
     int size = WEAPON_TABLE[id].slot_size;
 
+    // Hard constraint: Solar Core (10) + Lunar Blade (10) = all 20 slots.
+    // If both are already in primary inventory, refuse any further addition.
+    if (inv.has(WPN_SOLAR_CORE) && inv.has(WPN_LUNAR_BLADE) && id != WPN_SOLAR_CORE && id != WPN_LUNAR_BLADE) {
+        fprintf(stderr, "[Allocator] Inventory full (20/20 with both artifacts). Cannot add '%s'.\n",
+               WEAPON_TABLE[id].name);
+        return false;
+    }
+
     // 1. Try direct fit
     int start = inv.find_contiguous(size);
     if (start >= 0) {
@@ -41,24 +49,26 @@ inline bool allocator_add(Inventory& inv, WeaponID id) {
         }
     }
 
-    // Try evicting runs one-by-one (fewest first) until we have enough space
-    // We do this by collecting freed slots and checking contiguity.
-    // Simple greedy: evict from left until a contiguous block of 'size' appears.
+    // Try evicting runs one-by-one (fewest first) until we have enough space.
+    // Never evict artifacts — they must stay in primary inventory.
     bool evicted[INVENTORY_SLOTS] = {};
     int evict_list[INVENTORY_SLOTS];
     int nevict = 0;
 
-    // Mark all occupied slots
+    // Mark all free slots
     for (int i = 0; i < INVENTORY_SLOTS; ++i)
         evicted[i] = (inv.slots[i] == WPN_NONE);
 
     for (int r = 0; r < nruns; ++r) {
+        // Never evict artifacts to LT storage
+        if (WEAPON_TABLE[runs[r].wid].is_artifact) continue;
+
         // Evict this run
         for (int k = runs[r].start; k < runs[r].start + runs[r].sz; ++k)
             evicted[k] = true;
         evict_list[nevict++] = r;
 
-        // Check if contiguous block of 'size' now exists in evicted[]
+        // Check if contiguous block of 'size' now exists
         for (int i = 0; i <= INVENTORY_SLOTS - size; ++i) {
             bool ok = true;
             for (int j = 0; j < size; ++j)
@@ -70,7 +80,7 @@ inline bool allocator_add(Inventory& inv, WeaponID id) {
                     if (inv.lt_count < MAX_LT_STORAGE)
                         inv.lt_storage[inv.lt_count++] = (int)er.wid;
                     inv.remove(er.wid);
-                    printf("[Allocator] Evicted '%s' to LT storage.\n",
+                    fprintf(stderr, "[Allocator] Evicted '%s' to LT storage.\n",
                            WEAPON_TABLE[er.wid].name);
                 }
                 // Now place
@@ -81,9 +91,9 @@ inline bool allocator_add(Inventory& inv, WeaponID id) {
         }
     }
 
-    // LT storage also full or can't fit — should not happen given max sizes
-    printf("[Allocator] ERROR: Cannot fit weapon '%s' even after eviction.\n",
-           WEAPON_TABLE[id].name);
+    // Cannot fit even after eviction
+    fprintf(stderr, "[Allocator] Cannot fit '%s' (needs %d slots).\n",
+           WEAPON_TABLE[id].name, size);
     return false;
 }
 
@@ -95,7 +105,7 @@ inline bool allocator_swap_in(Inventory& inv, WeaponID id) {
     for (int i = 0; i < inv.lt_count; ++i)
         if (inv.lt_storage[i] == (int)id) { lt_idx = i; break; }
     if (lt_idx < 0) {
-        printf("[Allocator] Weapon '%s' not in LT storage.\n",
+        fprintf(stderr, "[Allocator] Weapon '%s' not in LT storage.\n",
                WEAPON_TABLE[id].name);
         return false;
     }

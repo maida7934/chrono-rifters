@@ -140,6 +140,25 @@ static void print_menu(SharedState* s, int pidx) {
     hip_print("  6) Skip          (stamina -> 50%%)\n");
     if (can_ultimate)
         hip_print("  7) ULTIMATE      (requires Solar Core + Lunar Blade)\n");
+
+    // Show available artifacts for pickup
+    bool any_artifact = false;
+    for (int a = 0; a < NUM_ARTIFACTS; ++a) {
+        pthread_mutex_lock(&s->resource_table.table_mutex);
+        bool avail = s->resource_table.entries[a].exists &&
+                     s->resource_table.entries[a].held_by < 0;
+        WeaponID aid = s->resource_table.entries[a].id;
+        pthread_mutex_unlock(&s->resource_table.table_mutex);
+        if (avail) {
+            if (!any_artifact) {
+                hip_print("  8) Pickup artifact:\n");
+                any_artifact = true;
+            }
+            hip_print("       %d = %s (slots %d)\n",
+                   (int)aid, WEAPON_TABLE[aid].name, WEAPON_TABLE[aid].slot_size);
+        }
+    }
+
     hip_print("  q) Quit game\n");
     hip_print("Choice: ");
 }
@@ -387,6 +406,22 @@ static void* player_thread(void* arg_ptr) {
                 valid = false;
             } else {
                 req.action = ACT_ULTIMATE;
+            }
+            break;
+        }
+
+        case 8: {  // Pickup artifact
+            hip_print("Enter artifact weapon index to pick up: ");
+            int wpn_choice = hip_read_int(-1);
+            if (wpn_choice < 0 || wpn_choice >= WPN_COUNT) {
+                hip_print("Invalid weapon index.\n");
+                valid = false;
+            } else if (!WEAPON_TABLE[wpn_choice].is_artifact) {
+                hip_print("That is not an artifact.\n");
+                valid = false;
+            } else {
+                req.action = ACT_PICKUP;
+                req.weapon = (WeaponID)wpn_choice;
             }
             break;
         }
