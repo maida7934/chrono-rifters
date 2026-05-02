@@ -1,21 +1,29 @@
-CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 -pthread
-LIBS = -lncurses -lrt
+CXX      := g++
+CXXFLAGS := -std=c++17 -Wall -Wextra -g -pthread
+# ncurses for TUI (Section 9). Uncomment SFML/SDL line if switching to GUI.
+LIBS     := -lncurses -lrt -lpthread
 
-# Use the actual file names as the targets
-all: arbiter_exec hip_exec asp_exec
-	@echo "Build complete."
+SHARED_SRC := shared/weapon_table.cpp
 
-arbiter_exec: arbiter/arbiter.cpp
-	$(CXX) $(CXXFLAGS) arbiter/*.cpp shared/*.cpp -o arbiter_exec $(LIBS)
+ARB_SRC  := arbiter/arbiter.cpp $(SHARED_SRC)
+HIP_SRC  := hip/hip.cpp         $(SHARED_SRC)
+ASP_SRC  := asp/asp.cpp         $(SHARED_SRC)
 
-hip_exec: hip/hip.cpp
-	$(CXX) $(CXXFLAGS) hip/*.cpp shared/*.cpp -o hip_exec $(LIBS)
-
-asp_exec: asp/asp.cpp
-	$(CXX) $(CXXFLAGS) asp/*.cpp shared/*.cpp -o asp_exec $(LIBS)
-
-clean:
-	rm -f arbiter_exec hip_exec asp_exec
+# Include shared/ so all .h files resolve without path prefixes
+INC      := -I.
 
 .PHONY: all clean
+
+all: arbiter_bin hip_bin asp_bin
+
+arbiter_bin: $(ARB_SRC)
+	$(CXX) $(CXXFLAGS) $(INC) $^ -o $@ $(LIBS)
+
+hip_bin: $(HIP_SRC)
+	$(CXX) $(CXXFLAGS) $(INC) $^ -o $@ $(LIBS)
+
+asp_bin: $(ASP_SRC)
+	$(CXX) $(CXXFLAGS) $(INC) $^ -o $@ $(LIBS)
+
+clean:
+	rm -f arbiter_bin hip_bin asp_bin

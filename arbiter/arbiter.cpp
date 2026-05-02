@@ -28,6 +28,7 @@
 #include <ncurses.h>
 #include <algorithm>
 #include <climits>
+#include <functional>
 
 // ─────────────────────────────────────────────
 //  Globals (arbiter-local)
@@ -520,7 +521,7 @@ static void* stun_tick(void*) {
 //  main
 // ─────────────────────────────────────────────
 int main(int argc, char* argv[]) {
-    (void)argc; (void)argv;  // suppress unused parameter warnings
+    (void)argc; (void)argv;
     srand((unsigned)time(nullptr));
 
     // Install signal handlers
@@ -567,7 +568,7 @@ int main(int argc, char* argv[]) {
     // ── Spawn HIP ────────────────────────────
     g_hip_pid = fork();
     if (g_hip_pid == 0) {
-        execl("./hip", "./hip", nullptr);
+        execl("./hip_bin", "hip", nullptr);
         perror("execl hip"); exit(1);
     }
     g_state->hip_pid = g_hip_pid;
@@ -575,7 +576,7 @@ int main(int argc, char* argv[]) {
     // ── Spawn ASP ────────────────────────────
     g_asp_pid = fork();
     if (g_asp_pid == 0) {
-        execl("./asp", "./asp", nullptr);
+        execl("./asp_bin", "asp", nullptr);
         perror("execl asp"); exit(1);
     }
     g_state->asp_pid = g_asp_pid;
@@ -664,7 +665,6 @@ int main(int argc, char* argv[]) {
             pthread_cond_broadcast(&g_state->turn_cond);
             pthread_mutex_unlock(&g_state->global_mutex);
 
-            bool got_action = false;
             while (true) {
                 struct timespec now;
                 clock_gettime(CLOCK_REALTIME, &now);
@@ -676,7 +676,6 @@ int main(int argc, char* argv[]) {
                     req.action    = ACT_SKIP;
                     snprintf(msg, LOG_LEN, "[Arbiter] NPC timeout → SKIP");
                     g_state->log.push(msg);
-                    got_action = true;
                     break;
                 }
                 pthread_mutex_lock(&g_state->global_mutex);
@@ -684,7 +683,6 @@ int main(int argc, char* argv[]) {
                     g_state->npc_action.entity_id == next) {
                     req = g_state->npc_action;
                     g_state->npc_action.ready = false;
-                    got_action = true;
                     pthread_mutex_unlock(&g_state->global_mutex);
                     break;
                 }
