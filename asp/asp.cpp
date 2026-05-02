@@ -8,14 +8,15 @@
  *   - Decides action via simple AI strategy
  *   - Writes ActionRequest to npc_action slot → Arbiter reads + applies
  *   - Handles SIGSTOP / SIGCONT for Ultimate Ability pause (Section 8)
+ *     (OS handles SIGSTOP — no code needed; threads resume on SIGCONT)
  *   - Handles SIGUSR1 for per-entity stun  (Section 5)
  *   - Does NOT modify global game state directly
  *   - Supports weapon drops when enemies die (chance-based, Section 6)
  *
- * AI strategy (simple but legal):
+ * AI strategy:
  *   - 80% chance: Strike the player with lowest HP
  *   - 20% chance: Skip
- *   - If stunned: wait until stun clears (Arbiter's stun_tick handles timer)
+ *   - Think delay 200–500ms to simulate non-trivial AI
  */
 
 #include "../shared/game_state.h"
@@ -32,7 +33,10 @@
 // ─────────────────────────────────────────────
 //  Globals
 // ─────────────────────────────────────────────
-static SharedState* g_state = nullptr;
+static SharedState*          g_state       = nullptr;
+static volatile sig_atomic_t g_running     = 1;
+static pthread_t             g_threads[MAX_ENEMIES];
+static int                   g_num_threads = 0;
 
 // Per-NPC thread argument
 struct NpcArg {
@@ -41,11 +45,22 @@ struct NpcArg {
 };
 
 // ─────────────────────────────────────────────
-//  SIGUSR1 handler — stun this NPC thread
+//  SIGUSR1 handler — stun interrupt
 //  The flag is set in SHM by the Arbiter.
 //  This just interrupts any blocking sleep/wait.
 // ─────────────────────────────────────────────
 static void handle_stun(int) { /* interrupt; loop re-checks stun flag */ }
+
+// ─────────────────────────────────────────────
+//  SIGTERM handler — graceful shutdown
+//  (sent by Arbiter on game over)
+// ─────────────────────────────────────────────
+static void handle_sigterm(int) {
+    g_running = 0;
+    if (g_state) {
+        pthread_cond_broadcast(&g_state->turn_cond);
+    }
+}
 
 // ─────────────────────────────────────────────
 //  AI: pick the player with lowest HP (alive)
@@ -67,10 +82,8 @@ static int ai_pick_target(SharedState* s) {
 // ─────────────────────────────────────────────
 //  Weapon drop logic (Section 6)
 //  Called when an enemy dies.
-//  30% drop chance.  If a player doesn't pick
-//  it up (automated here), an enemy "picks it
-//  up" — but since NPCs don't use weapons in
-//  the spec, we just skip that.
+//  30% drop chance.  Sets weapon_drop_pending in SHM
+//  so HIP can prompt the active player for pickup.
 // ─────────────────────────────────────────────
 static void maybe_drop_weapon(SharedState* s, int enemy_slot) {
     // 30% chance
@@ -86,42 +99,47 @@ static void maybe_drop_weapon(SharedState* s, int enemy_slot) {
     WeaponID dropped = drops[rand() % ndrop];
 
     char msg[LOG_LEN];
-    snprintf(msg, LOG_LEN, "[%s] dropped %s!  Pick up? (y/n): ",
+    snprintf(msg, LOG_LEN, "[%s] dropped %s!",
              s->entities[enemy_slot].name, WEAPON_TABLE[dropped].name);
     s->log.push(msg);
 
-    // We print the prompt to stdout; the player can type y/n.
-    // HIP reads this and applies via a special mechanism, but
-    // for the initial scaffold we auto-offer to player 0 if alive.
-    // (In a full implementation HIP handles the prompt on behalf of
-    //  the active player.)
-    printf("\n%s dropped %s! Pick up? (y/n): ",
-           s->entities[enemy_slot].name, WEAPON_TABLE[dropped].name);
-    fflush(stdout);
+    // Find the first alive player to offer the weapon to
+    pthread_mutex_lock(&s->global_mutex);
 
-    // Because ASP cannot read stdin (HIP owns the terminal),
-    // we give a brief window then auto-skip.
-    // In the full implementation the Arbiter pauses the turn loop
-    // and HIP collects the answer. Here we default to 'y' for
-    // player 0 if there is room.
-    // Non-blocking: try to read within 3 seconds using alarm
-    // For scaffold simplicity — auto-pick for player 0
-    bool auto_pick = true;
-    if (auto_pick) {
-        pthread_mutex_lock(&s->global_mutex);
-        if (s->entities[0].alive) {
-            bool ok = allocator_add(s->entities[0].inventory, dropped);
-            snprintf(msg, LOG_LEN, "[Player 0] picked up %s: %s",
-                     WEAPON_TABLE[dropped].name, ok ? "OK" : "No space");
-            s->log.push(msg);
+    int offer_to = -1;
+    // Prefer the currently active player if they're a player
+    if (s->active_entity >= 0 && s->active_entity < s->num_players &&
+        s->entities[s->active_entity].alive) {
+        offer_to = s->active_entity;
+    } else {
+        // Otherwise find first alive player
+        for (int i = 0; i < s->num_players; ++i) {
+            if (s->entities[i].alive) { offer_to = i; break; }
         }
-        pthread_mutex_unlock(&s->global_mutex);
     }
+
+    if (offer_to >= 0) {
+        // Set the weapon drop notification for HIP to pick up
+        s->weapon_drop_pending = true;
+        s->weapon_drop_id      = dropped;
+        s->weapon_drop_for     = offer_to;
+        snprintf(msg, LOG_LEN, "[World] %s available for [%s] — pick up on next turn.",
+                 WEAPON_TABLE[dropped].name, s->entities[offer_to].name);
+        s->log.push(msg);
+    } else {
+        // No players alive — weapon is lost
+        snprintf(msg, LOG_LEN, "[World] %s lost — no player to receive it.",
+                 WEAPON_TABLE[dropped].name);
+        s->log.push(msg);
+    }
+
+    pthread_mutex_unlock(&s->global_mutex);
 }
 
 // ─────────────────────────────────────────────
 //  Eclipse Relic spawn (Section 7)
-//  Spawned randomly after 3rd enemy kill.
+//  Spawned with 40% chance after 3rd enemy kill.
+//  Logs the event so HIP/TUI can display it.
 // ─────────────────────────────────────────────
 static void maybe_spawn_eclipse(SharedState* s) {
     if (s->eclipse_relic_spawned) return;
@@ -132,117 +150,134 @@ static void maybe_spawn_eclipse(SharedState* s) {
     s->eclipse_relic_spawned = true;
     s->resource_table.entries[2].exists  = true;
     s->resource_table.entries[2].held_by = -1;
+    s->resource_table.entries[2].locked  = false;
     pthread_mutex_unlock(&s->resource_table.table_mutex);
 
-    s->log.push("[World] Eclipse Relic has appeared in the arena!");
+    s->log.push("[World] *** Eclipse Relic has appeared in the arena! ***");
+
+    // Also notify via weapon drop mechanism so HIP prompts the player
+    pthread_mutex_lock(&s->global_mutex);
+    for (int i = 0; i < s->num_players; ++i) {
+        if (s->entities[i].alive) {
+            s->weapon_drop_pending = true;
+            s->weapon_drop_id      = WPN_ECLIPSE_RELIC;
+            s->weapon_drop_for     = i;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s->global_mutex);
 }
 
 // ─────────────────────────────────────────────
 //  NPC Thread
+//
+//  Each NPC enemy has its own dedicated thread.
+//  Only the thread matching active_entity may
+//  submit an action; all others block on condvar.
 // ─────────────────────────────────────────────
 static void* npc_thread(void* arg_ptr) {
     NpcArg* arg      = (NpcArg*)arg_ptr;
     int     slot     = arg->enemy_slot;   // index in entities[]
     SharedState* s   = arg->state;
 
-    // Install SIGUSR1 for stun
+    // Install SIGUSR1 for stun on this thread
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = handle_stun;
+    sa.sa_flags   = 0;  // no SA_RESTART — let signals interrupt blocking calls
     sigaction(SIGUSR1, &sa, nullptr);
 
-    while (true) {
-        // ── Exit if game over ─────────────────
+    while (g_running) {
+        // ── Wait until it is THIS NPC's turn ─────
         pthread_mutex_lock(&s->global_mutex);
-        if (s->phase == PHASE_QUIT ||
-            s->phase == PHASE_WIN  ||
-            s->phase == PHASE_LOSE) {
-            pthread_mutex_unlock(&s->global_mutex);
-            return nullptr;
-        }
 
-        // ── Check if this enemy is still alive ─
-        if (!s->entities[slot].alive) {
-            pthread_mutex_unlock(&s->global_mutex);
-            return nullptr;
-        }
-
-        // ── Wait until it is THIS NPC's turn ──
+        // Exit conditions
         while (s->active_entity != slot) {
-            if (s->phase != PHASE_RUNNING) {
+            if (!g_running ||
+                s->phase == PHASE_QUIT ||
+                s->phase == PHASE_WIN  ||
+                s->phase == PHASE_LOSE ||
+                !s->entities[slot].alive) {
                 pthread_mutex_unlock(&s->global_mutex);
                 return nullptr;
             }
             pthread_cond_wait(&s->turn_cond, &s->global_mutex);
+        }
 
-            // Re-check alive (could have been killed while waiting)
-            if (!s->entities[slot].alive) {
-                pthread_mutex_unlock(&s->global_mutex);
-                return nullptr;
-            }
+        // Re-check alive after waking (could have been killed)
+        if (!s->entities[slot].alive) {
+            pthread_mutex_unlock(&s->global_mutex);
+            return nullptr;
         }
         pthread_mutex_unlock(&s->global_mutex);
 
-        // ── Check stun ───────────────────────
+        // ── Stun-wait block (Phase 5, item 7) ────
+        // If stunned, block here until the Arbiter's stun_tick
+        // clears the flag. SIGUSR1 interrupts sleep() so we
+        // re-check promptly.
         {
             pthread_mutex_lock(&s->global_mutex);
-            bool stunned = s->entities[slot].stunned;
+            while (s->entities[slot].stunned) {
+                pthread_mutex_unlock(&s->global_mutex);
+                sleep(1);  // SIGUSR1 will interrupt this
+                if (!g_running) return nullptr;
+                pthread_mutex_lock(&s->global_mutex);
+                // If no longer our turn (scheduler moved on), re-loop
+                if (s->active_entity != slot || !s->entities[slot].alive) {
+                    pthread_mutex_unlock(&s->global_mutex);
+                    goto next_turn;
+                }
+            }
             pthread_mutex_unlock(&s->global_mutex);
-            if (stunned) {
-                // Wait for stun to clear (Arbiter's stun_tick handles it)
-                sleep(1);
+        }
+
+        // ── Decide action (AI) ───────────────────
+        {
+            ActionRequest req;
+            memset(&req, 0, sizeof(req));
+            req.entity_id = slot;
+            req.weapon    = WPN_NONE;
+            req.target_id = -1;
+
+            int roll = rand() % 100;
+
+            if (roll < 80) {
+                // Strike: pick lowest-HP player
+                pthread_mutex_lock(&s->global_mutex);
+                int target = ai_pick_target(s);
+                pthread_mutex_unlock(&s->global_mutex);
+
+                if (target < 0) {
+                    req.action = ACT_SKIP;  // no valid target
+                } else {
+                    req.action    = ACT_STRIKE;
+                    req.target_id = target;
+                }
+            } else {
+                req.action = ACT_SKIP;
+            }
+
+            // Small "think time" to simulate non-trivial AI (200–500ms)
+            usleep(200000 + rand() % 300000);
+
+            // ── Submit action to Arbiter ──────────
+            pthread_mutex_lock(&s->global_mutex);
+            // Final check before submit
+            if (!g_running || s->active_entity != slot) {
+                pthread_mutex_unlock(&s->global_mutex);
                 continue;
             }
-        }
-
-        // ── Decide action (AI) ────────────────
-        ActionRequest req;
-        memset(&req, 0, sizeof(req));
-        req.entity_id = slot;
-        req.weapon    = WPN_NONE;
-        req.target_id = -1;
-
-        int roll = rand() % 100;
-
-        if (roll < 80) {
-            // Strike: pick lowest-HP player
-            pthread_mutex_lock(&s->global_mutex);
-            int target = ai_pick_target(s);
+            s->npc_action       = req;
+            s->npc_action.ready = true;
+            pthread_cond_broadcast(&s->turn_cond);
             pthread_mutex_unlock(&s->global_mutex);
 
-            if (target < 0) {
-                req.action = ACT_SKIP;  // no valid target
-            } else {
-                req.action    = ACT_STRIKE;
-                req.target_id = target;
-                char msg[LOG_LEN];
-                snprintf(msg, LOG_LEN, "[%s] AI chose STRIKE → [%s]",
-                         s->entities[slot].name,
-                         s->entities[target].name);
-                s->log.push(msg);
-            }
-        } else {
-            req.action = ACT_SKIP;
-            char msg[LOG_LEN];
-            snprintf(msg, LOG_LEN, "[%s] AI chose SKIP",
-                     s->entities[slot].name);
-            s->log.push(msg);
+            // ── Check Eclipse Relic spawn ─────────
+            maybe_spawn_eclipse(s);
         }
 
-        // Small "think time" to simulate non-trivial AI
-        usleep(200000 + rand() % 300000);  // 200–500 ms
-
-        // ── Submit action to Arbiter ──────────
-        pthread_mutex_lock(&s->global_mutex);
-        s->npc_action       = req;
-        s->npc_action.ready = true;
-        pthread_cond_broadcast(&s->turn_cond);
-        pthread_mutex_unlock(&s->global_mutex);
-
-        // ── Check Eclipse Relic spawn ─────────
-        maybe_spawn_eclipse(s);
-
-        // Loop — wait for next turn
+next_turn:
+        ;  // continue outer loop
     }
     return nullptr;
 }
@@ -255,8 +290,8 @@ static void* npc_thread(void* arg_ptr) {
 static bool tracked_dead[MAX_ENEMIES] = {};
 
 static void* death_watcher(void*) {
-    while (true) {
-        usleep(200000);
+    while (g_running) {
+        usleep(200000);   // check every 200ms
         if (!g_state) continue;
 
         pthread_mutex_lock(&g_state->global_mutex);
@@ -264,7 +299,7 @@ static void* death_watcher(void*) {
         int ne       = g_state->num_enemies;
         pthread_mutex_unlock(&g_state->global_mutex);
 
-        if (ph != PHASE_RUNNING) break;
+        if (ph != PHASE_RUNNING && ph != PHASE_ULTIMATE_PAUSE) break;
 
         for (int i = 0; i < ne; ++i) {
             int slot = MAX_PLAYERS + i;
@@ -287,30 +322,53 @@ static void* death_watcher(void*) {
 int main() {
     srand((unsigned)time(nullptr) ^ (unsigned)getpid());
 
+    // Attach to shared memory (created by Arbiter)
     g_state = shm_attach();
+    if (!g_state) {
+        fprintf(stderr, "[ASP] Failed to attach shared memory!\n");
+        return 1;
+    }
+
+    // Install signal handlers
+    struct sigaction sa_term;
+    memset(&sa_term, 0, sizeof(sa_term));
+    sa_term.sa_handler = handle_sigterm;
+    sa_term.sa_flags   = 0;
+    sigaction(SIGTERM, &sa_term, nullptr);
+
+    struct sigaction sa_stun;
+    memset(&sa_stun, 0, sizeof(sa_stun));
+    sa_stun.sa_handler = handle_stun;
+    sa_stun.sa_flags   = 0;
+    sigaction(SIGUSR1, &sa_stun, nullptr);
 
     int ne = g_state->num_enemies;
+    g_num_threads = ne;
+
+    fprintf(stderr, "[ASP] Starting with %d NPC thread(s).\n", ne);
 
     // One thread per NPC
-    pthread_t threads[MAX_ENEMIES];
-    NpcArg    args[MAX_ENEMIES];
-
+    NpcArg args[MAX_ENEMIES];
     for (int i = 0; i < ne; ++i) {
         args[i].enemy_slot = MAX_PLAYERS + i;
         args[i].state      = g_state;
         tracked_dead[i]    = false;
-        pthread_create(&threads[i], nullptr, npc_thread, &args[i]);
+        pthread_create(&g_threads[i], nullptr, npc_thread, &args[i]);
     }
 
     // Death-watcher thread (lifecycle management, Section 2)
     pthread_t t_watcher;
     pthread_create(&t_watcher, nullptr, death_watcher, nullptr);
-    pthread_detach(t_watcher);
 
     // Wait for all NPC threads
     for (int i = 0; i < ne; ++i)
-        pthread_join(threads[i], nullptr);
+        pthread_join(g_threads[i], nullptr);
 
+    // Signal death watcher to stop and wait
+    g_running = 0;
+    pthread_join(t_watcher, nullptr);
+
+    fprintf(stderr, "[ASP] Shutting down.\n");
     shm_detach(g_state);
     return 0;
 }

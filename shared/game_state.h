@@ -317,6 +317,11 @@ struct SharedState {
     // ── NPC timeout flag (Arbiter sets, ASP reads) ──
     std::atomic<bool> npc_timeout;
 
+    // ── Weapon drop notification (ASP → HIP via Arbiter) ──
+    bool      weapon_drop_pending;   // true when a weapon is available
+    WeaponID  weapon_drop_id;        // which weapon was dropped
+    int       weapon_drop_for;       // entity index of player to prompt
+
     // ── Action Log ───────────────────────────
     ActionLog log;
 
@@ -344,6 +349,9 @@ struct SharedState {
         eclipse_relic_spawned = false;
         ultimate_active       = false;
         npc_timeout.store(false);
+        weapon_drop_pending   = false;
+        weapon_drop_id        = WPN_NONE;
+        weapon_drop_for       = -1;
 
         for (int i = 0; i < MAX_PLAYERS; ++i)
             player_actions[i].ready = false;
