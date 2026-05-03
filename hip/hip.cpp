@@ -268,23 +268,23 @@ static void* player_thread(void* arg_ptr) {
         pthread_mutex_unlock(&s->global_mutex);
 
         // ── Stun-wait block (Phase 4, item 5) ────────
-        // If stunned, block here until the Arbiter's stun_tick
-        // clears the flag. The SIGUSR1 signal interrupts sleep()
-        // so we re-check promptly.
+        // If stunned, wait via condvar until Arbiter clears the flag.
         {
             pthread_mutex_lock(&s->global_mutex);
             while (s->entities[pidx].stunned) {
-                pthread_mutex_unlock(&s->global_mutex);
-                hip_print("[%s] You are STUNNED! Waiting...\n",
-                       s->entities[pidx].name);
-                sleep(1);  // SIGUSR1 will interrupt this
-                if (!g_running) return nullptr;
-                pthread_mutex_lock(&s->global_mutex);
-                // Re-check if we're still the active entity
-                if (s->active_entity != pidx) {
+                hip_print("[%s] You are STUNNED! Waiting...\n", s->entities[pidx].name);
+                pthread_cond_wait(&s->turn_cond, &s->global_mutex);
+                if (!g_running) {
                     pthread_mutex_unlock(&s->global_mutex);
-                    continue;  // outer loop will re-wait on condvar
+                    return nullptr;
                 }
+                if (s->active_entity != pidx) {
+                    break;
+                }
+            }
+            if (s->active_entity != pidx) {
+                pthread_mutex_unlock(&s->global_mutex);
+                continue;
             }
             pthread_mutex_unlock(&s->global_mutex);
         }
@@ -483,16 +483,16 @@ int main() {
         pthread_create(&g_threads[i], nullptr, player_thread, &args[i]);
     }
 
-    // Wait for all player threads to finish
-    for (int i = 0; i < np; ++i)
-        pthread_join(g_threads[i], nullptr);
-
-    // If we're still running (SIGTERM not yet received),
-    // cancel any remaining threads
+    // If we're shutting down (SIGTERM received),
+    // cancel any remaining threads before joining
     if (!g_running) {
         for (int i = 0; i < np; ++i)
             pthread_cancel(g_threads[i]);
     }
+
+    // Wait for all player threads to finish
+    for (int i = 0; i < np; ++i)
+        pthread_join(g_threads[i], nullptr);
 
     fprintf(stderr, "[HIP] Shutting down.\n");
     shm_detach(g_state);

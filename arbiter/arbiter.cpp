@@ -38,76 +38,79 @@ static SharedState* g_state  = nullptr;
 static pid_t        g_hip_pid = -1;
 static pid_t        g_asp_pid = -1;
 static volatile bool g_ultimate_running = false;
+static volatile sig_atomic_t g_sigterm_received = 0;
+static volatile sig_atomic_t g_sigalrm_received = 0;
+static volatile sig_atomic_t g_sigchld_received = 0;
+
+static void process_pending_signals() {
+    if (!g_state) return;
+    if (g_sigterm_received) {
+        g_sigterm_received = 0;
+        g_state->phase = PHASE_QUIT;
+        g_state->log.push("[ARBITER] SIGTERM received. Shutting down.");
+        pthread_cond_broadcast(&g_state->turn_cond);
+    }
+    if (g_sigalrm_received) {
+        g_sigalrm_received = 0;
+        if (g_ultimate_running) {
+            g_ultimate_running = false;
+            if (g_asp_pid > 0) kill(g_asp_pid, SIGCONT);
+            g_state->log.push("[Arbiter] Ultimate window expired. ASP resumed.");
+            g_state->phase          = PHASE_RUNNING;
+            g_state->ultimate_active = false;
+            pthread_cond_broadcast(&g_state->turn_cond);
+        }
+    }
+    if (g_sigchld_received) {
+        g_sigchld_received = 0;
+        int status;
+        pid_t pid;
+        while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+            char msg[LOG_LEN];
+            snprintf(msg, LOG_LEN, "[Arbiter] Child PID %d exited.", (int)pid);
+            g_state->log.push(msg);
+            if (pid == g_hip_pid) {
+                for (int i = 0; i < g_state->num_players; ++i) {
+                    g_state->entities[i].alive = false;
+                    g_state->player_actions[i].ready = false;
+                }
+                g_hip_pid = -1;
+                snprintf(msg, LOG_LEN, "[Arbiter] HIP process died — all players marked dead.");
+                g_state->log.push(msg);
+            }
+            if (pid == g_asp_pid) {
+                for (int i = 0; i < g_state->num_enemies; ++i) {
+                    g_state->entities[MAX_PLAYERS + i].alive = false;
+                }
+                g_state->npc_action.ready = false;
+                g_asp_pid = -1;
+                snprintf(msg, LOG_LEN, "[Arbiter] ASP process died — all enemies marked dead.");
+                g_state->log.push(msg);
+            }
+            pthread_cond_broadcast(&g_state->turn_cond);
+        }
+    }
+}
 
 // ─────────────────────────────────────────────
 //  SIGTERM handler  (player quit)
 // ─────────────────────────────────────────────
 static void handle_sigterm(int) {
-    if (g_state) {
-        pthread_mutex_lock(&g_state->global_mutex);
-        g_state->phase = PHASE_QUIT;
-        pthread_cond_broadcast(&g_state->turn_cond);
-        pthread_mutex_unlock(&g_state->global_mutex);
-    }
+    g_sigterm_received = 1;
 }
 
 // ─────────────────────────────────────────────
 //  SIGALRM handler  (Ultimate 10-second window)
 // ─────────────────────────────────────────────
 static void handle_sigalrm(int) {
-    if (!g_state || !g_ultimate_running) return;
-    g_ultimate_running = false;
-
-    // Resume ASP
-    if (g_asp_pid > 0) kill(g_asp_pid, SIGCONT);
-
-    // Log
-    char msg[LOG_LEN];
-    snprintf(msg, LOG_LEN, "[Arbiter] Ultimate window expired. ASP resumed.");
-    g_state->log.push(msg);
-
-    pthread_mutex_lock(&g_state->global_mutex);
-    g_state->phase          = PHASE_RUNNING;
-    g_state->ultimate_active = false;
-    pthread_cond_broadcast(&g_state->turn_cond);
-    pthread_mutex_unlock(&g_state->global_mutex);
+    g_sigalrm_received = 1;
 }
 
 // ─────────────────────────────────────────────
 //  SIGCHLD handler  (process death)
 // ─────────────────────────────────────────────
 static void handle_sigchld(int) {
-    int status;
-    pid_t pid;
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        if (!g_state) continue;
-        char msg[LOG_LEN];
-        snprintf(msg, LOG_LEN, "[Arbiter] Child PID %d exited.", (int)pid);
-        g_state->log.push(msg);
-
-        // If HIP died, mark all player entities as dead and clear their action slots
-        if (pid == g_hip_pid) {
-            for (int i = 0; i < g_state->num_players; ++i) {
-                g_state->entities[i].alive = false;
-                g_state->player_actions[i].ready = false;
-            }
-            g_hip_pid = -1;
-            snprintf(msg, LOG_LEN, "[Arbiter] HIP process died — all players marked dead.");
-            g_state->log.push(msg);
-        }
-        // If ASP died, mark all enemy entities as dead and clear NPC action slot
-        if (pid == g_asp_pid) {
-            for (int i = 0; i < g_state->num_enemies; ++i) {
-                g_state->entities[MAX_PLAYERS + i].alive = false;
-            }
-            g_state->npc_action.ready = false;
-            g_asp_pid = -1;
-            snprintf(msg, LOG_LEN, "[Arbiter] ASP process died — all enemies marked dead.");
-            g_state->log.push(msg);
-        }
-        // Broadcast so main loop re-evaluates game-over
-        pthread_cond_broadcast(&g_state->turn_cond);
-    }
+    g_sigchld_received = 1;
 }
 
 // ─────────────────────────────────────────────
@@ -171,11 +174,17 @@ static int scheduler_next() {
     }
     g_state->virtual_time += min_dt;
 
-    // Find entity with full stamina (players checked first, then enemies)
+    // ── Tiebreak Logic ────────────────────────
+    // If multiple entities reach max_stamina simultaneously, the first one encountered in the indices array 
+    // wins the tie. Since we loaded players (0..np-1) first, then enemies (MAX_PLAYERS..), players inherently
+    // win ties against enemies, and lower-indexed players win ties against higher-indexed players.
+    // ──────────────────────────────────────────
     for (int k = 0; k < count; ++k) {
         Entity& e = g_state->entities[indices[k]];
-        if (e.alive && !e.stunned &&
-            e.stamina >= e.max_stamina) return indices[k];
+        if (e.alive && !e.stunned && e.stamina >= e.max_stamina) {
+            e.swapped_weapon_unavailable = WPN_NONE;
+            return indices[k];
+        }
     }
     return -1;
 }
@@ -266,8 +275,13 @@ static void artifact_release_all(int entity_id) {
 // Deliver stun to an entity: set flags + send SIGUSR1 to owning process
 static void deliver_stun(int target_id) {
     Entity& target = g_state->entities[target_id];
-    target.stunned        = true;
-    target.stun_remaining = STUN_DURATION;
+    target.stunned = true;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    target.stun_end_time = ts.tv_sec + (ts.tv_nsec / 1e9) + STUN_DURATION;
+    if (target.stamina >= target.max_stamina) {
+        target.skip_turn_from_stun = true;
+    }
 
     char msg[LOG_LEN];
     snprintf(msg, LOG_LEN, "[%s] is STUNNED for %.0fs!", target.name, STUN_DURATION);
@@ -308,8 +322,14 @@ static void apply_action(ActionRequest& req) {
             target.alive = false;
             snprintf(msg, LOG_LEN, "[%s] is DEFEATED!", target.name);
             g_state->log.push(msg);
-            if (target.type == ENT_ENEMY)
+            if (target.type == ENT_ENEMY) {
                 ++g_state->total_enemies_killed;
+                if (g_state->total_enemies_killed >= WIN_KILL_COUNT) {
+                    g_state->phase = PHASE_WIN;
+                    actor.stamina = 0;
+                    return;
+                }
+            }
             artifact_release_all(req.target_id);
         }
         actor.stamina = 0;
@@ -330,6 +350,11 @@ static void apply_action(ActionRequest& req) {
 
     case ACT_USE_WEAPON: {
         if (req.target_id < 0 || req.weapon == WPN_NONE) break;
+        if (req.weapon == actor.swapped_weapon_unavailable) {
+            snprintf(msg, LOG_LEN, "[%s] %s is still readying from swap!", actor.name, WEAPON_TABLE[req.weapon].name);
+            g_state->log.push(msg);
+            break;
+        }
         if (!actor.inventory.has(req.weapon)) {
             snprintf(msg, LOG_LEN, "[%s] doesn't have %s!",
                      actor.name, WEAPON_TABLE[req.weapon].name);
@@ -356,8 +381,15 @@ static void apply_action(ActionRequest& req) {
             target.alive = false;
             snprintf(msg, LOG_LEN, "[%s] is DEFEATED!", target.name);
             g_state->log.push(msg);
-            if (target.type == ENT_ENEMY)
+            if (target.type == ENT_ENEMY) {
                 ++g_state->total_enemies_killed;
+                if (g_state->total_enemies_killed >= WIN_KILL_COUNT) {
+                    g_state->phase = PHASE_WIN;
+                    if (WEAPON_TABLE[req.weapon].is_artifact) artifact_release(req.entity_id, req.weapon);
+                    actor.stamina = 0;
+                    return;
+                }
+            }
             artifact_release_all(req.target_id);
         }
         // Release artifact after use
@@ -371,6 +403,7 @@ static void apply_action(ActionRequest& req) {
     case ACT_SWAP_IN: {
         if (req.weapon == WPN_NONE) break;
         bool ok = allocator_swap_in(actor.inventory, req.weapon);
+        if (ok) actor.swapped_weapon_unavailable = req.weapon;
         snprintf(msg, LOG_LEN, "[%s] SWAP IN %s: %s",
                  actor.name, WEAPON_TABLE[req.weapon].name,
                  ok ? "OK" : "FAIL");
@@ -437,6 +470,13 @@ static void apply_action(ActionRequest& req) {
                 snprintf(msg, LOG_LEN, "  ★ [%s] is VAPORIZED!", e.name);
                 g_state->log.push(msg);
                 artifact_release_all(MAX_PLAYERS + i);
+                if (g_state->total_enemies_killed >= WIN_KILL_COUNT) {
+                    g_state->phase = PHASE_WIN;
+                    artifact_release(req.entity_id, WPN_SOLAR_CORE);
+                    artifact_release(req.entity_id, WPN_LUNAR_BLADE);
+                    actor.stamina = 0;
+                    return;
+                }
             }
         }
 
@@ -595,7 +635,7 @@ static void* render_thread(void*) {
         if (!g_state) { usleep(100000); continue; }
 
         pthread_mutex_lock(&g_state->global_mutex);
-        // ── snapshot ──
+
         int np  = g_state->num_players;
         int ne  = g_state->num_enemies;
         GamePhase phase = g_state->phase;
@@ -603,17 +643,7 @@ static void* render_thread(void*) {
         bool ult        = g_state->ultimate_active;
         int active      = g_state->active_entity;
         float vtime     = g_state->virtual_time;
-
-        // Copy entity data
-        Entity ents[MAX_ENTITIES];
-        memcpy(ents, g_state->entities, sizeof(ents));
-
-        // Copy log
-        char loglines[LOG_LINES][LOG_LEN];
-        memcpy(loglines, g_state->log.lines, sizeof(loglines));
-        int log_head = g_state->log.head;
-
-        pthread_mutex_unlock(&g_state->global_mutex);
+        int log_head    = g_state->log.head;
 
         clear();
         int maxcol = 78;  // safe for 80-col terminal
@@ -643,7 +673,7 @@ static void* render_thread(void*) {
 
         mvprintw(1, 1, "Kills: %d/%d  Time: %.1f  Active: %s",
                  killed, WIN_KILL_COUNT, vtime,
-                 (active >= 0 ? ents[active].name : "---"));
+                 (active >= 0 ? g_state->entities[active].name : "---"));
 
         int row = 3;
 
@@ -653,7 +683,7 @@ static void* render_thread(void*) {
         attroff(COLOR_PAIR(4) | A_UNDERLINE);
 
         for (int i = 0; i < np; ++i) {
-            Entity& e = ents[i];
+            Entity& e = g_state->entities[i];
             if (!e.alive) {
                 attron(COLOR_PAIR(2));
                 mvprintw(row++, 1, " %-10s [DEAD]", e.name);
@@ -688,7 +718,7 @@ static void* render_thread(void*) {
         attroff(COLOR_PAIR(2) | A_UNDERLINE);
 
         for (int i = 0; i < ne; ++i) {
-            Entity& e = ents[MAX_PLAYERS + i];
+            Entity& e = g_state->entities[MAX_PLAYERS + i];
             if (!e.alive) {
                 mvprintw(row++, 1, " %-10s [DEAD]", e.name);
                 continue;
@@ -721,15 +751,17 @@ static void* render_thread(void*) {
         int log_start = (log_head - log_show + LOG_LINES) % LOG_LINES;
         for (int i = 0; i < log_show; ++i) {
             int idx = (log_start + i) % LOG_LINES;
-            if (loglines[idx][0]) {
+            if (g_state->log.lines[idx][0]) {
                 // Truncate to 76 chars for 80-col safety
                 char trunc[78];
-                snprintf(trunc, sizeof(trunc), "%.76s", loglines[idx]);
+                snprintf(trunc, sizeof(trunc), "%.76s", g_state->log.lines[idx]);
                 mvprintw(row++, 1, " %s", trunc);
             }
         }
 
         refresh();
+        pthread_mutex_unlock(&g_state->global_mutex);
+
         usleep(100000);  // 10 FPS
 
         // Exit render loop when game ends
@@ -747,39 +779,39 @@ static void* render_thread(void*) {
 // ─────────────────────────────────────────────
 static void* stun_tick(void*) {
     while (true) {
-        usleep(100000);  // tick every 100ms
+        usleep(10000);  // tick every 10ms for precision
         if (!g_state) continue;
-        if (g_state->phase != PHASE_RUNNING &&
-            g_state->phase != PHASE_ULTIMATE_PAUSE) continue;
 
         pthread_mutex_lock(&g_state->global_mutex);
-        // Iterate correct entity indices (players 0..np-1, enemies MAX_PLAYERS..)
+        process_pending_signals();
+
+        if (g_state->phase != PHASE_RUNNING &&
+            g_state->phase != PHASE_ULTIMATE_PAUSE) {
+            pthread_mutex_unlock(&g_state->global_mutex);
+            continue;
+        }
+
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        double now = ts.tv_sec + (ts.tv_nsec / 1e9);
+
         int np = g_state->num_players;
         int ne = g_state->num_enemies;
-        for (int i = 0; i < np; ++i) {
-            Entity& e = g_state->entities[i];
-            if (e.stunned) {
-                e.stun_remaining -= 0.1f;
-                if (e.stun_remaining <= 0.0f) {
-                    e.stunned        = false;
-                    e.stun_remaining = 0.0f;
-                    char msg[LOG_LEN];
+        for (int i = 0; i < np + ne; ++i) {
+            int idx = (i < np) ? i : MAX_PLAYERS + (i - np);
+            Entity& e = g_state->entities[idx];
+            if (e.stunned && now >= e.stun_end_time) {
+                e.stunned = false;
+                char msg[LOG_LEN];
+                if (e.skip_turn_from_stun) {
+                    e.skip_turn_from_stun = false;
+                    e.stamina = e.max_stamina * 0.50f;
+                    snprintf(msg, LOG_LEN, "[%s] recovered from stun (turn skipped).", e.name);
+                } else {
                     snprintf(msg, LOG_LEN, "[%s] recovered from stun.", e.name);
-                    g_state->log.push(msg);
                 }
-            }
-        }
-        for (int i = 0; i < ne; ++i) {
-            Entity& e = g_state->entities[MAX_PLAYERS + i];
-            if (e.stunned) {
-                e.stun_remaining -= 0.1f;
-                if (e.stun_remaining <= 0.0f) {
-                    e.stunned        = false;
-                    e.stun_remaining = 0.0f;
-                    char msg[LOG_LEN];
-                    snprintf(msg, LOG_LEN, "[%s] recovered from stun.", e.name);
-                    g_state->log.push(msg);
-                }
+                g_state->log.push(msg);
+                pthread_cond_broadcast(&g_state->turn_cond);
             }
         }
         pthread_mutex_unlock(&g_state->global_mutex);

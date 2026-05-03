@@ -86,6 +86,19 @@ static int ai_pick_target(SharedState* s) {
 //  so HIP can prompt the active player for pickup.
 // ─────────────────────────────────────────────
 static void maybe_drop_weapon(SharedState* s, int enemy_slot) {
+    // Find if NPC held a weapon
+    pthread_mutex_lock(&s->global_mutex);
+    bool held_weapon = false;
+    for (int i = 0; i < INVENTORY_SLOTS; ++i) {
+        if (s->entities[enemy_slot].inventory.slots[i] != WPN_NONE) {
+            held_weapon = true;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s->global_mutex);
+
+    if (held_weapon) return; // Spec: "If an NPC holds a weapon at the time of its death, the weapon is not dropped."
+
     // 30% chance
     if ((rand() % 100) >= 30) return;
 
@@ -142,11 +155,18 @@ static void maybe_drop_weapon(SharedState* s, int enemy_slot) {
 //  Logs the event so HIP/TUI can display it.
 // ─────────────────────────────────────────────
 static void maybe_spawn_eclipse(SharedState* s) {
-    if (s->eclipse_relic_spawned) return;
     if (s->total_enemies_killed < 3)  return;
-    if ((rand() % 100) >= 40)         return;   // 40% chance each check
 
     pthread_mutex_lock(&s->resource_table.table_mutex);
+    if (s->eclipse_relic_spawned) {
+        pthread_mutex_unlock(&s->resource_table.table_mutex);
+        return;
+    }
+    if ((rand() % 100) >= 40) {
+        pthread_mutex_unlock(&s->resource_table.table_mutex);
+        return;
+    }
+
     s->eclipse_relic_spawned = true;
     s->resource_table.entries[2].exists  = true;
     s->resource_table.entries[2].held_by = -1;
@@ -175,6 +195,10 @@ static void maybe_spawn_eclipse(SharedState* s) {
 //  Only the thread matching active_entity may
 //  submit an action; all others block on condvar.
 // ─────────────────────────────────────────────
+static void cleanup_mutex(void* arg) {
+    pthread_mutex_unlock((pthread_mutex_t*)arg);
+}
+
 static void* npc_thread(void* arg_ptr) {
     NpcArg* arg      = (NpcArg*)arg_ptr;
     int     slot     = arg->enemy_slot;   // index in entities[]
@@ -190,6 +214,7 @@ static void* npc_thread(void* arg_ptr) {
     while (g_running) {
         // ── Wait until it is THIS NPC's turn ─────
         pthread_mutex_lock(&s->global_mutex);
+        pthread_cleanup_push(cleanup_mutex, &s->global_mutex);
 
         // Exit conditions
         while (s->active_entity != slot) {
@@ -198,7 +223,7 @@ static void* npc_thread(void* arg_ptr) {
                 s->phase == PHASE_WIN  ||
                 s->phase == PHASE_LOSE ||
                 !s->entities[slot].alive) {
-                pthread_mutex_unlock(&s->global_mutex);
+                pthread_cleanup_pop(1);
                 return nullptr;
             }
             pthread_cond_wait(&s->turn_cond, &s->global_mutex);
@@ -206,30 +231,24 @@ static void* npc_thread(void* arg_ptr) {
 
         // Re-check alive after waking (could have been killed)
         if (!s->entities[slot].alive) {
-            pthread_mutex_unlock(&s->global_mutex);
+            pthread_cleanup_pop(1);
             return nullptr;
         }
-        pthread_mutex_unlock(&s->global_mutex);
 
         // ── Stun-wait block (Phase 5, item 7) ────
-        // If stunned, block here until the Arbiter's stun_tick
-        // clears the flag. SIGUSR1 interrupts sleep() so we
-        // re-check promptly.
-        {
-            pthread_mutex_lock(&s->global_mutex);
-            while (s->entities[slot].stunned) {
-                pthread_mutex_unlock(&s->global_mutex);
-                sleep(1);  // SIGUSR1 will interrupt this
-                if (!g_running) return nullptr;
-                pthread_mutex_lock(&s->global_mutex);
-                // If no longer our turn (scheduler moved on), re-loop
-                if (s->active_entity != slot || !s->entities[slot].alive) {
-                    pthread_mutex_unlock(&s->global_mutex);
-                    goto next_turn;
-                }
+        // If stunned, wait via condvar until Arbiter clears the flag.
+        while (s->entities[slot].stunned) {
+            pthread_cond_wait(&s->turn_cond, &s->global_mutex);
+            if (!g_running) {
+                pthread_cleanup_pop(1);
+                return nullptr;
             }
-            pthread_mutex_unlock(&s->global_mutex);
         }
+        if (s->active_entity != slot || !s->entities[slot].alive) {
+            pthread_cleanup_pop(1);
+            goto next_turn;
+        }
+        pthread_cleanup_pop(1);
 
         // ── Decide action (AI) ───────────────────
         {
@@ -262,15 +281,16 @@ static void* npc_thread(void* arg_ptr) {
 
             // ── Submit action to Arbiter ──────────
             pthread_mutex_lock(&s->global_mutex);
+            pthread_cleanup_push(cleanup_mutex, &s->global_mutex);
             // Final check before submit
             if (!g_running || s->active_entity != slot) {
-                pthread_mutex_unlock(&s->global_mutex);
+                pthread_cleanup_pop(1);
                 continue;
             }
             s->npc_action       = req;
             s->npc_action.ready = true;
             pthread_cond_broadcast(&s->turn_cond);
-            pthread_mutex_unlock(&s->global_mutex);
+            pthread_cleanup_pop(1);
 
             // ── Check Eclipse Relic spawn ─────────
             maybe_spawn_eclipse(s);

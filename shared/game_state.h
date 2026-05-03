@@ -146,8 +146,10 @@ struct Entity {
     float max_stamina;
 
     bool  alive;
-    bool  stunned;           // set by signal, cleared after 3s
-    float stun_remaining;    // countdown in seconds
+    bool   stunned;              // set by signal, cleared after 3s
+    double stun_end_time;        // exact deadline in seconds
+    bool   skip_turn_from_stun;  // skip next turn if full stamina when stunned
+    WeaponID swapped_weapon_unavailable; // weapon swapped this turn
 
     // Inventory (only meaningful for players)
     Inventory inventory;
@@ -160,7 +162,9 @@ struct Entity {
         id          = idx;
         alive       = true;
         stunned     = false;
-        stun_remaining = 0;
+        stun_end_time = 0;
+        skip_turn_from_stun = false;
+        swapped_weapon_unavailable = WPN_NONE;
         max_stamina = 100.0f;
         stamina     = 0.0f;
         speed       = 100.0f / num_players;
@@ -178,7 +182,9 @@ struct Entity {
         id          = MAX_PLAYERS + idx;
         alive       = true;
         stunned     = false;
-        stun_remaining = 0;
+        stun_end_time = 0;
+        skip_turn_from_stun = false;
+        swapped_weapon_unavailable = WPN_NONE;
         max_stamina = 150.0f;
         stamina     = 0.0f;
         speed       = 10.0f + rand() % 21;  // 10..30
