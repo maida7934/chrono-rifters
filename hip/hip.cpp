@@ -223,6 +223,7 @@ static WeaponID pick_lt_weapon(SharedState* s, int pidx) {
 //  Returns true if player picks it up.
 // ─────────────────────────────────────────────
 static bool weapon_pickup_prompt(SharedState* s, int pidx, WeaponID wpn) {
+    (void)s; (void)pidx;  // kept for future use (e.g. inventory preview)
     hip_print("\n*** WEAPON DROP! ***\n");
     hip_print("A [%s] (dmg %d, slots %d) is available!\n",
            WEAPON_TABLE[wpn].name, WEAPON_TABLE[wpn].damage,
