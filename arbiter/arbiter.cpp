@@ -497,35 +497,43 @@ static void apply_action(ActionRequest& req) {
     }
 
     case ACT_PICKUP: {
-        // Pick up an artifact from the arena (Section 7)
+        // Pick up a weapon from the arena — handles both artifacts
+        // (Section 7 resource-table path) and non-artifact drops
+        // (Section 6 weapon-drop path).
         if (req.weapon == WPN_NONE) break;
         WeaponID wpn = req.weapon;
 
-        if (!WEAPON_TABLE[wpn].is_artifact) {
-            snprintf(msg, LOG_LEN, "[%s] %s is not an artifact!",
-                     actor.name, WEAPON_TABLE[wpn].name);
-            g_state->log.push(msg);
-            break;
-        }
+        if (WEAPON_TABLE[wpn].is_artifact) {
+            // ── Artifact path: acquire in resource table first ──
+            if (!artifact_acquire(req.entity_id, wpn)) {
+                // Blocked — wait registered in WaitForGraph
+                actor.stamina = 0;
+                break;
+            }
 
-        // Lock resource table and attempt to acquire
-        if (!artifact_acquire(req.entity_id, wpn)) {
-            // Blocked — wait registered in WaitForGraph
-            actor.stamina = 0;
-            break;
-        }
-
-        // Add to inventory via allocator (enforces 20-slot hard limit)
-        bool added = allocator_add(actor.inventory, wpn);
-        if (!added) {
-            artifact_release(req.entity_id, wpn);
-            snprintf(msg, LOG_LEN, "[%s] PICKUP %s FAILED: inventory full!",
-                     actor.name, WEAPON_TABLE[wpn].name);
-            g_state->log.push(msg);
+            bool added = allocator_add(actor.inventory, wpn);
+            if (!added) {
+                artifact_release(req.entity_id, wpn);
+                snprintf(msg, LOG_LEN, "[%s] PICKUP %s FAILED: inventory full!",
+                         actor.name, WEAPON_TABLE[wpn].name);
+                g_state->log.push(msg);
+            } else {
+                snprintf(msg, LOG_LEN, "[%s] picked up %s!",
+                         actor.name, WEAPON_TABLE[wpn].name);
+                g_state->log.push(msg);
+            }
         } else {
-            snprintf(msg, LOG_LEN, "[%s] picked up %s!",
-                     actor.name, WEAPON_TABLE[wpn].name);
-            g_state->log.push(msg);
+            // ── Non-artifact path: straight to space allocator ──
+            bool added = allocator_add(actor.inventory, wpn);
+            if (!added) {
+                snprintf(msg, LOG_LEN, "[%s] PICKUP %s FAILED: inventory full!",
+                         actor.name, WEAPON_TABLE[wpn].name);
+                g_state->log.push(msg);
+            } else {
+                snprintf(msg, LOG_LEN, "[%s] picked up %s!",
+                         actor.name, WEAPON_TABLE[wpn].name);
+                g_state->log.push(msg);
+            }
         }
         actor.stamina = 0;
         break;
@@ -544,7 +552,7 @@ static void apply_action(ActionRequest& req) {
 // ─────────────────────────────────────────────
 static void* deadlock_monitor(void*) {
     while (true) {
-        sleep(1);
+        usleep(1000000);  // 1s — use usleep to avoid SIGALRM interaction with alarm()
         if (!g_state || g_state->phase != PHASE_RUNNING) continue;
 
         pthread_mutex_lock(&g_state->resource_table.table_mutex);

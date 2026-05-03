@@ -298,11 +298,11 @@ static void* player_thread(void* arg_ptr) {
                 pthread_mutex_unlock(&s->global_mutex);
 
                 if (weapon_pickup_prompt(s, pidx, drop)) {
-                    // Player accepted — submit a SWAP_IN action
+                    // Player accepted — submit a PICKUP action
                     ActionRequest req;
                     memset(&req, 0, sizeof(req));
                     req.entity_id = pidx;
-                    req.action    = ACT_SWAP_IN;
+                    req.action    = ACT_PICKUP;
                     req.weapon    = drop;
                     req.target_id = -1;
                     req.ready     = true;
