@@ -111,6 +111,7 @@ enum EntityType { ENT_PLAYER, ENT_ENEMY };
 
 enum ActionType {
     ACT_NONE = 0,
+    ACT_MOVE,
     ACT_STRIKE,       // normal attack
     ACT_EXHAUST,      // reduce stamina
     ACT_USE_WEAPON,   // attack with weapon
@@ -119,6 +120,7 @@ enum ActionType {
     ACT_SKIP,
     ACT_ULTIMATE,     // needs Solar Core + Lunar Blade
     ACT_PICKUP,       // pick up artifact from arena
+    ACT_AOE,          // area-of-effect attack (hits enemies within range)
     ACT_QUIT          // player quit signal
 };
 
@@ -127,6 +129,8 @@ struct ActionRequest {
     ActionType action;
     int        target_id;    // for attacks
     WeaponID   weapon;       // for USE_WEAPON / SWAP_IN
+    int        move_dx;      // for ACT_MOVE
+    int        move_dy;
     bool       ready;        // HIP sets true; Arbiter clears after consuming
 };
 
@@ -144,6 +148,7 @@ struct Entity {
     float speed;
     float stamina;
     float max_stamina;
+    int   level;
 
     bool  alive;
     bool   stunned;              // set by signal, cleared after 3s
@@ -156,6 +161,11 @@ struct Entity {
 
     // Scheduling
     float next_action_time;  // virtual time when stamina will be full
+    int   x;                 // screen x position for TUI (cols)
+    int   y;                 // screen y position for TUI (rows)
+    int   offset_x;          // visual offset from orbital position
+    int   offset_y;
+    double last_hit_time;    // virtual_time at last damage, for hit-flash FX
 
     void init_player(int idx, int roll_no, int num_players) {
         type        = ENT_PLAYER;
@@ -174,6 +184,10 @@ struct Entity {
         // Damage = last digit of roll_no + 10
         damage = (roll_no % 10) + 10;
         inventory.init();
+        level = 1;
+        x = -1; y = -1;
+        offset_x = 0; offset_y = 0;
+        last_hit_time = -1e9;
         snprintf(name, NAME_LEN, "Hero-%d", idx + 1);
     }
 
@@ -194,6 +208,10 @@ struct Entity {
         // Damage = second last digit + 10
         damage = ((roll_no / 10) % 10) + 10;
         inventory.init();
+        level = 1 + (rand() % 3);
+        x = -1; y = -1;
+        offset_x = 0; offset_y = 0;
+        last_hit_time = -1e9;
         snprintf(name, NAME_LEN, "Enemy-%d", idx + 1);
     }
 };
@@ -320,6 +338,7 @@ struct SharedState {
     GamePhase phase;
     bool      eclipse_relic_spawned;
     bool      ultimate_active;
+    int       game_level;   // chosen difficulty / level
 
     // ── NPC timeout flag (Arbiter sets, ASP reads) ──
     std::atomic<bool> npc_timeout;
@@ -328,6 +347,9 @@ struct SharedState {
     bool      weapon_drop_pending;   // true when a weapon is available
     WeaponID  weapon_drop_id;        // which weapon was dropped
     int       weapon_drop_for;       // entity index of player to prompt
+        // If true, HIP should not prompt on the terminal and Arbiter's
+        // ncurses render_thread will capture input instead.
+        bool      use_ncurses_ui;
 
     // ── Action Log ───────────────────────────
     ActionLog log;
@@ -355,10 +377,12 @@ struct SharedState {
         phase         = PHASE_LOBBY;
         eclipse_relic_spawned = false;
         ultimate_active       = false;
+        game_level = 1;
         npc_timeout.store(false);
         weapon_drop_pending   = false;
         weapon_drop_id        = WPN_NONE;
         weapon_drop_for       = -1;
+            use_ncurses_ui        = false;
 
         for (int i = 0; i < MAX_PLAYERS; ++i)
             player_actions[i].ready = false;
