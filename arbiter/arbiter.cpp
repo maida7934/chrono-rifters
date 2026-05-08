@@ -481,7 +481,9 @@ static void apply_action(ActionRequest& req) {
                      actor.name, WEAPON_TABLE[req.weapon].name);
             g_state->log.push(msg); actor.stamina = 0; break;
         }
-        if (!actor.inventory.has(req.weapon)) {
+        // Players use shared party inventory, enemies use their own
+        Inventory& inv = (actor.type == ENT_PLAYER) ? g_state->player_party_inventory : actor.inventory;
+        if (!inv.has(req.weapon)) {
             snprintf(msg, LOG_LEN, "[%s] doesn't have %s!",
                      actor.name, WEAPON_TABLE[req.weapon].name);
             g_state->log.push(msg); actor.stamina = 0; break;
@@ -552,9 +554,11 @@ static void apply_action(ActionRequest& req) {
 
     case ACT_SWAP_IN: {
         if (req.weapon == WPN_NONE) break;
+        // Players use shared party inventory, enemies use their own
+        Inventory& inv = (actor.type == ENT_PLAYER) ? g_state->player_party_inventory : actor.inventory;
         bool in_lt = false;
-        for (int i = 0; i < actor.inventory.lt_count; ++i)
-            if (actor.inventory.lt_storage[i] == (int)req.weapon) { in_lt = true; break; }
+        for (int i = 0; i < inv.lt_count; ++i)
+            if (inv.lt_storage[i] == (int)req.weapon) { in_lt = true; break; }
         if (!in_lt) {
             snprintf(msg, LOG_LEN, "[%s] %s not in LT storage!",
                      actor.name, WEAPON_TABLE[req.weapon].name);
@@ -562,9 +566,9 @@ static void apply_action(ActionRequest& req) {
         }
         // Track swap-OUT count: allocator_swap_in pulls 1 from LT, then
         // calls allocator_add which may evict other weapons back into LT.
-        int lt_before = actor.inventory.lt_count;
-        bool ok = allocator_swap_in(actor.inventory, req.weapon);
-        int lt_after  = actor.inventory.lt_count;
+        int lt_before = inv.lt_count;
+        bool ok = allocator_swap_in(inv, req.weapon);
+        int lt_after  = inv.lt_count;
         // After: lt_after = (lt_before - 1) + evicted
         int evicted = lt_after - (lt_before - 1);
         if (evicted < 0) evicted = 0;
@@ -600,7 +604,9 @@ static void apply_action(ActionRequest& req) {
     }
 
     case ACT_ULTIMATE: {
-        if (!actor.inventory.has(WPN_SOLAR_CORE) || !actor.inventory.has(WPN_LUNAR_BLADE)) {
+        // Players use shared party inventory, enemies use their own
+        Inventory& inv = (actor.type == ENT_PLAYER) ? g_state->player_party_inventory : actor.inventory;
+        if (!inv.has(WPN_SOLAR_CORE) || !inv.has(WPN_LUNAR_BLADE)) {
             snprintf(msg, LOG_LEN, "[%s] ULTIMATE FAILED: need Solar Core + Lunar Blade",
                      actor.name);
             g_state->log.push(msg); actor.stamina = 0; break;
@@ -650,6 +656,8 @@ static void apply_action(ActionRequest& req) {
     case ACT_PICKUP: {
         if (req.weapon == WPN_NONE) break;
         WeaponID wpn = req.weapon;
+        // Players use shared party inventory, enemies use their own
+        Inventory& inv = (actor.type == ENT_PLAYER) ? g_state->player_party_inventory : actor.inventory;
         if (WEAPON_TABLE[wpn].is_artifact) {
             if (!artifact_acquire(req.entity_id, wpn)) {
                 // Clear drop state even on artifact contention failure
@@ -658,7 +666,7 @@ static void apply_action(ActionRequest& req) {
                 g_state->weapon_drop_for     = -1;
                 actor.stamina = 0; break;
             }
-            bool added = allocator_add(actor.inventory, wpn);
+            bool added = allocator_add(inv, wpn);
             if (!added) {
                 artifact_release(req.entity_id, wpn);
                 snprintf(msg, LOG_LEN, "[%s] PICKUP %s FAILED: no space!",
@@ -668,7 +676,7 @@ static void apply_action(ActionRequest& req) {
                          actor.name, WEAPON_TABLE[wpn].name);
             }
         } else {
-            bool added = allocator_add(actor.inventory, wpn);
+            bool added = allocator_add(inv, wpn);
             if (added) {
                 snprintf(msg, LOG_LEN, "[%s] picked up %s!",
                          actor.name, WEAPON_TABLE[wpn].name);
@@ -896,6 +904,7 @@ struct RenderSnapshot {
     double npc_turn_deadline_sec;
     GamePhase phase;
     Entity entities[MAX_ENTITIES];
+    Inventory player_party_inventory;
     WeaponID artifact_id[NUM_ARTIFACTS];
     bool artifact_exists[NUM_ARTIFACTS];
     int  artifact_held_by[NUM_ARTIFACTS];
@@ -931,6 +940,7 @@ static void take_snapshot(RenderSnapshot& snap) {
     pthread_mutex_unlock(&g_state->resource_table.table_mutex);
     memcpy(snap.log_lines, g_state->log.lines, sizeof(snap.log_lines));
     snap.log_head = g_state->log.head;
+    snap.player_party_inventory = g_state->player_party_inventory;
 }
 
 static void dump_action_log_to_file(const RenderSnapshot& snap) {
@@ -1077,10 +1087,12 @@ static void* render_thread(void*) {
                     // Helper: get nth-distinct weapon in inventory (1-indexed).
                     auto nth_weapon = [&](int n) -> WeaponID {
                         Entity& me = g_state->entities[active];
+                        // Players use shared party inventory, enemies use their own
+                        Inventory& inv = (me.type == ENT_PLAYER) ? g_state->player_party_inventory : me.inventory;
                         int seen[WPN_COUNT]; for (int k=0;k<WPN_COUNT;++k) seen[k]=0;
                         int wcount = 0;
                         for (int s = 0; s < INVENTORY_SLOTS; ++s) {
-                            int w = me.inventory.slots[s];
+                            int w = inv.slots[s];
                             if (w == WPN_NONE || seen[w]) continue;
                             seen[w] = 1; ++wcount;
                             if (wcount == n) return (WeaponID)w;
@@ -1181,9 +1193,11 @@ static void* render_thread(void*) {
                     case 'v': {
                         // Swap-in: pull first weapon from LT storage.
                         Entity& me = g_state->entities[active];
-                        if (me.inventory.lt_count > 0) {
+                        // Players use shared party inventory, enemies use their own
+                        Inventory& inv = (me.type == ENT_PLAYER) ? g_state->player_party_inventory : me.inventory;
+                        if (inv.lt_count > 0) {
                             req.action = ACT_SWAP_IN;
-                            req.weapon = (WeaponID)me.inventory.lt_storage[0];
+                            req.weapon = (WeaponID)inv.lt_storage[0];
                             got = true;
                         }
                         break;
@@ -1694,8 +1708,10 @@ static void* render_thread(void*) {
             }
             if (lr < rows - LOG_H - 1) {
                 attron(COLOR_PAIR(CP_ARTIFACT));
-                bool has_sc = e.inventory.has(WPN_SOLAR_CORE);
-                bool has_lb = e.inventory.has(WPN_LUNAR_BLADE);
+                // Players use shared party inventory, enemies use their own
+                Inventory& inv = (e.type == ENT_PLAYER) ? snap.player_party_inventory : e.inventory;
+                bool has_sc = inv.has(WPN_SOLAR_CORE);
+                bool has_lb = inv.has(WPN_LUNAR_BLADE);
                 mvprintw(lr++, 1, " %s%s",
                          has_sc ? "[SC]" : "    ",
                          has_lb ? "[LB]" : "    ");
@@ -1706,11 +1722,11 @@ static void* render_thread(void*) {
 
         // Active-player inventory panel (under players list)
         if (display_active >= 0 && display_active < np) {
-            Entity& me = snap.entities[display_active];
+            Inventory& inv = snap.player_party_inventory;
             int iy = lr;
             if (iy < rows - LOG_H - 8) {
                 attron(COLOR_PAIR(CP_HEADER) | A_BOLD | A_UNDERLINE);
-                mvprintw(iy++, 1, " INVENTORY ");
+                mvprintw(iy++, 1, " PARTY INVENTORY ");
                 attroff(COLOR_PAIR(CP_HEADER) | A_BOLD | A_UNDERLINE);
 
                 // Visual 20-slot bar (2 rows of 10)
@@ -1720,7 +1736,7 @@ static void* render_thread(void*) {
                 for (int s = 0; s < INVENTORY_SLOTS; ++s) {
                     int row = iy + (s / 10);
                     int col = 8 + (s % 10);
-                    int w = me.inventory.slots[s];
+                    int w = inv.slots[s];
                     if (w == WPN_NONE) {
                         attron(COLOR_PAIR(CP_BORDER));
                         mvaddch(row, col, '.');
@@ -1742,7 +1758,7 @@ static void* render_thread(void*) {
                 int wcount = 0;
                 int seen[WPN_COUNT]; for (int k=0;k<WPN_COUNT;++k) seen[k]=0;
                 for (int s = 0; s < INVENTORY_SLOTS && iy < rows - LOG_H - 5 && wcount < 6; ++s) {
-                    int w = me.inventory.slots[s];
+                    int w = inv.slots[s];
                     if (w == WPN_NONE || seen[w]) continue;
                     seen[w] = 1; ++wcount;
                     int cp = WEAPON_TABLE[w].is_artifact ? CP_ARTIFACT : CP_GOLD;
@@ -1751,9 +1767,9 @@ static void* render_thread(void*) {
                              3 + wcount, WEAPON_TABLE[w].name, WEAPON_TABLE[w].damage);
                     attroff(COLOR_PAIR(cp));
                 }
-                if (me.inventory.lt_count > 0 && iy < rows - LOG_H - 5) {
+                if (inv.lt_count > 0 && iy < rows - LOG_H - 5) {
                     attron(COLOR_PAIR(CP_BORDER));
-                    mvprintw(iy++, 1, " LT:%d stored (V=swap-in)", me.inventory.lt_count);
+                    mvprintw(iy++, 1, " LT:%d stored (V=swap-in)", inv.lt_count);
                     attroff(COLOR_PAIR(CP_BORDER));
                 }
                 attroff(COLOR_PAIR(CP_LOG));
