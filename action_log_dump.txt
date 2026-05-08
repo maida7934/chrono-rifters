@@ -1,0 +1,453 @@
+CHRONO RIFT ACTION LOG DUMP
+Generated: Fri May  8 13:56:26 2026
+Entries: 449
+----------------------------------------
+>> [Hero-2]'s turn (t=1.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (197/211)
+  >> [Enemy-1] knocked to (27,3)
+>> [Hero-1]'s turn (t=2.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (183/211)
+  >> [Enemy-1] knocked to (28,2)
+>> [Hero-2]'s turn (t=3.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (169/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=4.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (155/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=5.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (141/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=5.00)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1541/1554)
+  >> [Hero-1] knocked to (7,24)
+>> [Enemy-1]'s turn (t=5.56)
+[Enemy-1] STRIKE -> [Hero-1] -13 HP (1528/1554)
+  >> [Hero-1] knocked to (6,25)
+>> [Hero-1]'s turn (t=6.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (127/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=7.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (113/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=8.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (99/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=9.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (85/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=10.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (71/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=10.00)
+[Enemy-2] STRIKE -> [Hero-1] -13 HP (1515/1554)
+  >> [Hero-1] knocked to (5,26)
+>> [Enemy-3]'s turn (t=10.00)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1502/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=11.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (57/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=11.11)
+[Enemy-1] STRIKE -> [Hero-1] -13 HP (1489/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=12.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (43/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=13.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (29/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=14.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (15/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=15.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (1/211)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=15.00)
+[Enemy-3] SKIP (stamina -> 50%)
+>> [Hero-1]'s turn (t=16.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/211)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Solar Core dropped — [Hero-1] press P to pick up!
+*** WAVE 2 INCOMING — 1 killed / 10 to go ***
+>> [Hero-2]'s turn (t=17.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (184/198)
+  >> [Enemy-1] knocked to (27,3)
+>> [Enemy-3]'s turn (t=17.50)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1476/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=18.00)
+[Hero-1] acquired Solar Core
+[Hero-1] picked up Solar Core!
+>> [Hero-2]'s turn (t=19.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (170/198)
+  >> [Enemy-1] knocked to (28,2)
+>> [Hero-1]'s turn (t=20.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (156/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=20.00)
+[Enemy-2] STRIKE -> [Hero-1] -13 HP (1463/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=21.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (142/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=21.36)
+[Enemy-1] SKIP (stamina -> 50%)
+>> [Hero-1]'s turn (t=22.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (128/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=22.50)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1450/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=23.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (114/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=24.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (100/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=24.04)
+[Enemy-1] SKIP (stamina -> 50%)
+>> [Hero-2]'s turn (t=25.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (86/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=26.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (72/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=26.71)
+[Enemy-1] STRIKE -> [Hero-1] -14 HP (1436/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=27.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (58/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=27.50)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1423/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=28.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (44/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=29.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (30/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=30.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (16/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=30.00)
+[Enemy-2] STRIKE -> [Hero-1] -13 HP (1410/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=31.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (2/198)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=32.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/198)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Solar Core dropped — [Hero-1] press P to pick up!
+*** WAVE 3 INCOMING — 2 killed / 10 to go ***
+>> [Enemy-3]'s turn (t=32.50)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1397/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=33.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (245/259)
+  >> [Enemy-1] knocked to (27,3)
+>> [Hero-1]'s turn (t=34.00)
+[Hero-1] declined Solar Core -> enemy pickup fallback.
+[Enemy-1] picked up dropped Solar Core.
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (231/259)
+  >> [Enemy-1] knocked to (28,2)
+>> [Hero-2]'s turn (t=35.00)
+[Hero-2] No weapon in slot 4
+[Hero-2] No weapon in slot 4
+[Hero-2] No weapon in slot 4
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (217/259)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=36.00)
+[Hero-1] waiting for Solar Core (held by [Hero-1])
+[Hero-1] can't acquire Solar Core — blocked!
+>> [Hero-2]'s turn (t=37.00)
+[Arbiter] DEADLOCK -> forced [Hero-1] release Solar Core
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (203/259)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=37.50)
+[Enemy-3] SKIP (stamina -> 50%)
+>> [Hero-1]'s turn (t=38.00)
+[Hero-1] acquired Solar Core
+[Hero-1] USE Solar Core -> [Enemy-1] -95 HP (108/259)
+[Enemy-1] STUNNED for 3s!
+[Hero-1] released Solar Core
+>> [Hero-2]'s turn (t=39.00)
+[Enemy-1] recovered from stun.
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (94/259)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=40.00)
+[Hero-1] acquired Solar Core
+[Hero-1] USE Solar Core -> [Enemy-1] -95 HP (0/259)
+[Enemy-1] DEFEATED!
+[Hero-1] released Solar Core
+*** WAVE 4 INCOMING — 3 killed / 10 to go ***
+>> [Enemy-2]'s turn (t=40.00)
+[Enemy-2] STRIKE -> [Hero-1] -13 HP (1384/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=40.00)
+[World] *** Eclipse Relic appeared! ***
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1371/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=41.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (251/265)
+  >> [Enemy-1] knocked to (27,3)
+>> [Hero-1]'s turn (t=42.00)
+[Hero-1] declined Eclipse Relic -> enemy pickup fallback.
+[Enemy-1] picked up dropped Eclipse Relic.
+[Hero-1] acquired Solar Core
+[Hero-1] USE Solar Core -> [Enemy-1] -95 HP (156/265)
+[Hero-1] released Solar Core
+>> [Hero-2]'s turn (t=43.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (142/265)
+  >> [Enemy-1] knocked to (28,2)
+>> [Hero-1]'s turn (t=44.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (128/265)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=45.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (114/265)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=45.00)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1358/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=46.00)
+[Hero-1] acquired Solar Core
+[Hero-1] USE Solar Core -> [Enemy-1] -95 HP (19/265)
+[Enemy-1] STUNNED for 3s!
+[Hero-1] released Solar Core
+>> [Hero-2]'s turn (t=47.00)
+[Enemy-1] recovered from stun.
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (5/265)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=47.25)
+[Enemy-1] STRIKE -> [Hero-1] -19 HP (1339/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=48.00)
+[Hero-1] acquired Solar Core
+[Hero-1] USE Solar Core -> [Enemy-1] -95 HP (0/265)
+[Enemy-1] STUNNED for 3s!
+[Enemy-1] DEFEATED!
+[DROP] Iron Halberd dropped — [Hero-1] press P to pick up!
+[Hero-1] released Solar Core
+*** WAVE 5 INCOMING — 4 killed / 10 to go ***
+>> [Hero-2]'s turn (t=49.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (195/209)
+  >> [Enemy-1] knocked to (27,3)
+>> [Hero-1]'s turn (t=50.00)
+[Hero-1] declined Iron Halberd -> enemy pickup fallback.
+[Enemy-1] picked up dropped Iron Halberd.
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (181/209)
+  >> [Enemy-1] knocked to (28,2)
+>> [Enemy-2]'s turn (t=50.00)
+[Enemy-2] STRIKE -> [Hero-1] -13 HP (1326/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=50.00)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1313/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=51.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (167/209)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=52.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (153/209)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=53.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (139/209)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=54.00)
+[Hero-1] acquired Solar Core
+[Hero-1] USE Solar Core -> [Enemy-1] -95 HP (44/209)
+[Hero-1] released Solar Core
+>> [Hero-2]'s turn (t=55.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (30/209)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=55.00)
+[Enemy-3] SKIP (stamina -> 50%)
+>> [Hero-1]'s turn (t=56.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (16/209)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=57.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (2/209)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=57.50)
+[Enemy-3] SKIP (stamina -> 50%)
+>> [Hero-1]'s turn (t=58.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/209)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Solar Core dropped — [Hero-1] press P to pick up!
+*** WAVE 6 INCOMING — 5 killed / 10 to go ***
+>> [Hero-2]'s turn (t=59.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (220/234)
+  >> [Enemy-1] knocked to (27,3)
+>> [Hero-1]'s turn (t=60.00)
+[Hero-1] declined Solar Core -> enemy pickup fallback.
+[Enemy-1] picked up dropped Solar Core.
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (206/234)
+  >> [Enemy-1] knocked to (28,2)
+>> [Enemy-2]'s turn (t=60.00)
+[Enemy-2] SKIP (stamina -> 50%)
+>> [Enemy-3]'s turn (t=60.00)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1300/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=61.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (192/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=62.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (178/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=63.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (164/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=64.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (150/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=65.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (136/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=65.00)
+[Enemy-2] SKIP (stamina -> 50%)
+>> [Enemy-3]'s turn (t=65.00)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1287/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=65.14)
+[Enemy-1] STRIKE -> [Hero-1] -18 HP (1269/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=66.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (122/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=67.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (108/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=68.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (94/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=69.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (80/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=70.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (66/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=70.00)
+[Enemy-2] SKIP (stamina -> 50%)
+>> [Enemy-3]'s turn (t=70.00)
+[Enemy-3] SKIP (stamina -> 50%)
+>> [Hero-2]'s turn (t=71.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (52/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=72.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (38/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=72.29)
+[Enemy-1] STRIKE -> [Hero-1] -18 HP (1251/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=72.50)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1238/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=73.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (24/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=74.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (10/234)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=75.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (0/234)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Solar Core dropped — [Hero-2] press P to pick up!
+*** WAVE 7 INCOMING — 6 killed / 10 to go ***
+>> [Enemy-2]'s turn (t=75.00)
+[Enemy-2] STRIKE -> [Hero-1] -13 HP (1225/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=76.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (221/235)
+  >> [Enemy-1] knocked to (27,3)
+>> [Hero-2]'s turn (t=77.00)
+[Hero-2] declined Solar Core -> enemy pickup fallback.
+[Enemy-1] picked up dropped Solar Core.
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (207/235)
+  >> [Enemy-1] knocked to (28,2)
+>> [Enemy-3]'s turn (t=77.50)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1212/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=78.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (193/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=79.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (179/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=80.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (165/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=80.36)
+[Enemy-1] STRIKE -> [Hero-1] -14 HP (1198/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=81.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (151/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=82.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (137/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=82.50)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1185/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=83.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (123/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=84.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (109/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=85.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (95/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=85.00)
+[Enemy-2] STRIKE -> [Hero-1] -13 HP (1172/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=85.71)
+[Enemy-1] STRIKE -> [Hero-1] -14 HP (1158/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=86.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (81/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=87.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (67/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=87.50)
+[Enemy-3] SKIP (stamina -> 50%)
+>> [Hero-1]'s turn (t=88.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (53/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=89.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (39/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=90.00)
+[Enemy-3] STRIKE -> [Hero-1] -13 HP (1145/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=90.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (25/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=91.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (11/235)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=91.07)
+[Enemy-1] STRIKE -> [Hero-1] -14 HP (1131/1554)
+  >> [Hero-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=92.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/235)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Solar Core dropped — [Hero-1] press P to pick up!
+*** WAVE 8 INCOMING — 7 killed / 10 to go ***
+>> [Hero-2]'s turn (t=93.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (218/232)
+  >> [Enemy-1] knocked to (27,3)
+>> [Hero-1]'s turn (t=94.00)
+[Hero-1] declined Solar Core -> enemy pickup fallback.
+[Enemy-1] picked up dropped Solar Core.
+[Hero-1] acquired Solar Core
+[Hero-1] USE Solar Core -> [Enemy-1] -95 HP (123/232)
+[Enemy-1] STUNNED for 3s!
+[Hero-1] released Solar Core
+>> [Hero-2]'s turn (t=95.00)
+[Enemy-1] recovered from stun.

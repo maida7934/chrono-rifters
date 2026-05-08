@@ -20,7 +20,7 @@ constexpr int MAX_LT_STORAGE    = 64;   // long-term storage slots
 constexpr int MAX_WEAPONS_WORLD = 16;
 constexpr int NAME_LEN          = 32;
 constexpr int LOG_LEN           = 128;
-constexpr int LOG_LINES         = 20;
+constexpr int LOG_LINES         = 2000;
 
 constexpr int  WIN_KILL_COUNT   = 10;
 constexpr float STUN_DURATION   = 3.0f;   // seconds
@@ -319,10 +319,10 @@ struct SharedState {
     int    active_entity;   // index into entities[], -1 = calculating
     float  virtual_time;    // current scheduler time
 
-    // ── Action Channels (HIP → Arbiter) ──────
+    // ── Action Channels (HIP -> Arbiter) ──────
     ActionRequest player_actions[MAX_PLAYERS];
 
-    // ── Action Channel (ASP → Arbiter) ───────
+    // ── Action Channel (ASP -> Arbiter) ───────
     ActionRequest npc_action;   // single slot; ASP fills, Arbiter reads
 
     // ── Resource / Artifact Table ─────────────
@@ -342,11 +342,13 @@ struct SharedState {
 
     // ── NPC timeout flag (Arbiter sets, ASP reads) ──
     std::atomic<bool> npc_timeout;
+    double    npc_turn_deadline_sec; // wall-clock deadline for current NPC turn; 0 if inactive
 
-    // ── Weapon drop notification (ASP → HIP via Arbiter) ──
+    // ── Weapon drop notification (ASP -> HIP via Arbiter) ──
     bool      weapon_drop_pending;   // true when a weapon is available
     WeaponID  weapon_drop_id;        // which weapon was dropped
     int       weapon_drop_for;       // entity index of player to prompt
+    int       weapon_drop_turns_left; // turns remaining before enemy auto-pickup fallback
         // If true, HIP should not prompt on the terminal and Arbiter's
         // ncurses render_thread will capture input instead.
         bool      use_ncurses_ui;
@@ -379,9 +381,11 @@ struct SharedState {
         ultimate_active       = false;
         game_level = 1;
         npc_timeout.store(false);
+        npc_turn_deadline_sec = 0.0;
         weapon_drop_pending   = false;
         weapon_drop_id        = WPN_NONE;
         weapon_drop_for       = -1;
+        weapon_drop_turns_left = 0;
             use_ncurses_ui        = false;
 
         for (int i = 0; i < MAX_PLAYERS; ++i)

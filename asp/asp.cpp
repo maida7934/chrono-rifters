@@ -38,20 +38,6 @@ static int ai_pick_target(SharedState* s) {
     return best;
 }
 
-static void ai_move_toward(SharedState* s, int slot, int target,
-                           int& dx, int& dy) {
-    dx = dy = 0;
-    if (target < 0) return;
-    Entity& e = s->entities[slot];
-    Entity& t = s->entities[target];
-    int ddx = t.x - e.x, ddy = t.y - e.y;
-    // Step on the dominant axis; small lateral drift on the other.
-    if (std::abs(ddx) >= std::abs(ddy))
-        dx = (ddx > 0) ? 1 : (ddx < 0 ? -1 : 0);
-    else
-        dy = (ddy > 0) ? 1 : (ddy < 0 ? -1 : 0);
-}
-
 static void maybe_drop_weapon(SharedState* s, int slot) {
     // Spec: NPC weapons are NOT dropped on death
     pthread_mutex_lock(&s->global_mutex);
@@ -80,6 +66,7 @@ static void maybe_drop_weapon(SharedState* s, int slot) {
         s->weapon_drop_pending = true;
         s->weapon_drop_id      = dropped;
         s->weapon_drop_for     = offer;
+        s->weapon_drop_turns_left = 1;
     }
     pthread_mutex_unlock(&s->global_mutex);
 }
@@ -102,6 +89,7 @@ static void maybe_spawn_eclipse(SharedState* s) {
             s->weapon_drop_pending = true;
             s->weapon_drop_id      = WPN_ECLIPSE_RELIC;
             s->weapon_drop_for     = i;
+            s->weapon_drop_turns_left = 1;
             break;
         }
     }
@@ -153,12 +141,7 @@ static void* npc_thread(void* arg_ptr) {
         }
         pthread_mutex_unlock(&s->global_mutex);
 
-        // Mixed AI:
-        //   - if no target alive: SKIP
-        //   - if very close: STRIKE most of the time
-        //   - if far away:    MOVE toward target most of the time
-        //   - small chance to SKIP regardless (per spec enemies have STRIKE/SKIP;
-        //     MOVE is added as a quality-of-life enhancement so combat feels alive)
+        // Spec-aligned AI: enemies only STRIKE or SKIP.
         int roll = rand() % 100;
         if (target < 0) {
             req.action = ACT_SKIP;
@@ -171,16 +154,10 @@ static void* npc_thread(void* arg_ptr) {
                 req.action = ACT_SKIP;
             }
         } else {
-            // Far away — still strikes more often than not (Strike has no
-            // range cost in this game), occasionally moves to flavour combat.
+            // Far away - still STRIKE most of the time, otherwise SKIP.
             if (roll < 75) {
                 req.action    = ACT_STRIKE;
                 req.target_id = target;
-            } else if (roll < 92) {
-                req.action = ACT_MOVE;
-                pthread_mutex_lock(&s->global_mutex);
-                ai_move_toward(s, slot, target, req.move_dx, req.move_dy);
-                pthread_mutex_unlock(&s->global_mutex);
             } else {
                 req.action = ACT_SKIP;
             }

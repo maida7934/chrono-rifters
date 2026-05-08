@@ -17,7 +17,7 @@
  *  - Ultimate: SIGSTOP ASP for 10s, SIGALRM + SIGCONT resumption
  *  - Deadlock monitor: DFS cycle detection, force-release victim
  *  - Stun: 3s via SIGUSR1, skip turn if stamina was full
- *  - NPC turn timeout: 3s → SKIP
+ *  - NPC turn timeout: 3s -> SKIP
  *  - Eclipse Relic spawned dynamically after 3 kills (40% chance)
  *  - TUI: diamond/rhombus battlefield, rich colour, rendering thread
  */
@@ -67,7 +67,7 @@ static void process_pending_signals() {
     if (g_sigterm_received) {
         g_sigterm_received = 0;
         g_state->phase = PHASE_QUIT;
-        g_state->log.push("[ARBITER] SIGTERM → shutting down.");
+        g_state->log.push("[ARBITER] SIGTERM -> shutting down.");
         pthread_cond_broadcast(&g_state->turn_cond);
     }
     if (g_sigalrm_received) {
@@ -304,12 +304,68 @@ static void deliver_stun(int target_id) {
     if (owner > 0) kill(owner, SIGUSR1);
 }
 
+static void resolve_weapon_drop_fallback_now() {
+    if (!g_state->weapon_drop_pending) return;
+    WeaponID dropped = g_state->weapon_drop_id;
+    if (dropped == WPN_NONE) {
+        g_state->weapon_drop_pending = false;
+        g_state->weapon_drop_for = -1;
+        return;
+    }
+
+    // Spec §6: enemy is GUARANTEED to pick it up.
+    // Iterate alive enemies sequentially; give to the first with space.
+    bool picked = false;
+    for (int i = 0; i < g_state->num_enemies; ++i) {
+        Entity& e = g_state->entities[MAX_PLAYERS + i];
+        if (!e.alive) continue;
+        bool added = allocator_add(e.inventory, dropped);
+        if (added) {
+            char msg[LOG_LEN];
+            snprintf(msg, LOG_LEN, "[%s] picked up dropped %s.",
+                     e.name, WEAPON_TABLE[dropped].name);
+            g_state->log.push(msg);
+            picked = true;
+            break;  // only one enemy gets it
+        }
+    }
+    if (!picked) {
+        char msg[LOG_LEN];
+        snprintf(msg, LOG_LEN, "[Drop] %s vanished (no enemy had space).",
+                 WEAPON_TABLE[dropped].name);
+        g_state->log.push(msg);
+    }
+
+    // Important per spec: NPC weapons are NOT dropped when that NPC dies
+    g_state->weapon_drop_pending = false;
+    g_state->weapon_drop_id = WPN_NONE;
+    g_state->weapon_drop_for = -1;
+    g_state->weapon_drop_turns_left = 0;
+}
+
 // ─────────────────────────────────────────────
 //  Apply action
 // ─────────────────────────────────────────────
 static void apply_action(ActionRequest& req) {
     Entity& actor = g_state->entities[req.entity_id];
     char msg[LOG_LEN];
+
+    // Spec §6: if a weapon drop is pending for this player and they chose
+    // anything other than ACT_PICKUP, check the grace period.
+    if (g_state->weapon_drop_pending &&
+        g_state->weapon_drop_for == req.entity_id &&
+        req.action != ACT_PICKUP) {
+        if (g_state->weapon_drop_turns_left <= 0) {
+            // Grace period expired — enemy guaranteed pickup
+            snprintf(msg, LOG_LEN, "[%s] ignored %s -> enemy picks it up.",
+                     actor.name, WEAPON_TABLE[g_state->weapon_drop_id].name);
+            g_state->log.push(msg);
+            resolve_weapon_drop_fallback_now();
+        } else {
+            // Still within grace period — decrement and let player act
+            --g_state->weapon_drop_turns_left;
+        }
+    }
 
     switch (req.action) {
 
@@ -329,7 +385,7 @@ static void apply_action(ActionRequest& req) {
             if (o.x == nx && o.y == ny) { blocked = true; break; }
         }
         if (!blocked) { actor.x = nx; actor.y = ny; }
-        snprintf(msg, LOG_LEN, "[%s] MOVE → (%d,%d)%s",
+        snprintf(msg, LOG_LEN, "[%s] MOVE -> (%d,%d)%s",
                  actor.name, actor.x, actor.y, blocked ? " (blocked)" : "");
         g_state->log.push(msg);
         actor.stamina = 0;
@@ -342,7 +398,7 @@ static void apply_action(ActionRequest& req) {
         if (!tgt.alive) break;
         tgt.hp = std::max(0, tgt.hp - actor.damage);
         tgt.last_hit_time = wallclock_sec();
-        snprintf(msg, LOG_LEN, "[%s] STRIKE → [%s] -%d HP (%d/%d)",
+        snprintf(msg, LOG_LEN, "[%s] STRIKE -> [%s] -%d HP (%d/%d)",
                  actor.name, tgt.name, actor.damage, tgt.hp, tgt.max_hp);
         g_state->log.push(msg);
 
@@ -353,10 +409,18 @@ static void apply_action(ActionRequest& req) {
             int kx = (tgt.x > actor.x) ? 1 : (tgt.x < actor.x ? -1 : 0);
             int ky = (tgt.y > actor.y) ? 1 : (tgt.y < actor.y ? -1 : 0);
             if (kx == 0 && ky == 0) kx = 1;     // bump to the right if stacked
-            tgt.x = std::max(1, std::min(BF_W, tgt.x + kx));
-            tgt.y = std::max(1, std::min(BF_H, tgt.y + ky));
-            snprintf(msg, LOG_LEN, "  >> [%s] knocked to (%d,%d)",
-                     tgt.name, tgt.x, tgt.y);
+            int nx = tgt.x + kx;
+            int ny = tgt.y + ky;
+            // Keep knockback away from top edge and avoid stacking at borders.
+            if (nx < 1 || nx > BF_W || ny < 2 || ny > BF_H) {
+                snprintf(msg, LOG_LEN, "  >> [%s] resisted knockback at edge",
+                         tgt.name);
+            } else {
+                tgt.x = nx;
+                tgt.y = ny;
+                snprintf(msg, LOG_LEN, "  >> [%s] knocked to (%d,%d)",
+                         tgt.name, tgt.x, tgt.y);
+            }
             g_state->log.push(msg);
         }
 
@@ -369,6 +433,27 @@ static void apply_action(ActionRequest& req) {
             if (tgt.type == ENT_ENEMY) {
                 ++g_state->total_enemies_killed;
                 artifact_release_all(req.target_id);
+
+                // ── Weapon drop trigger (spec §6: 30% chance) ──
+                if (actor.type == ENT_PLAYER &&
+                    !g_state->weapon_drop_pending) {
+                    if ((rand() % 100) < 30) {
+                        WeaponID drop_pool[] = {
+                            WPN_IRON_HALBERD, WPN_VENOM_DAGGER, WPN_THUNDERSTAFF,
+                            WPN_OBSIDIAN_AXE, WPN_FROSTBOW,     WPN_SPLINTER_STICK
+                        };
+                        WeaponID dropped = drop_pool[rand() % 6];
+                        g_state->weapon_drop_pending    = true;
+                        g_state->weapon_drop_id         = dropped;
+                        g_state->weapon_drop_for        = req.entity_id;
+                        g_state->weapon_drop_turns_left = 1; // 1-turn grace
+                        snprintf(msg, LOG_LEN,
+                            "[DROP] %s dropped \xe2\x80\x94 [%s] press P to pick up!",
+                            WEAPON_TABLE[dropped].name, actor.name);
+                        g_state->log.push(msg);
+                    }
+                }
+
                 if (g_state->total_enemies_killed >= WIN_KILL_COUNT)
                     { g_state->phase = PHASE_WIN; actor.stamina = 0; return; }
             }
@@ -382,7 +467,7 @@ static void apply_action(ActionRequest& req) {
         Entity& tgt = g_state->entities[req.target_id];
         if (!tgt.alive) break;
         tgt.stamina = std::max(0.0f, tgt.stamina - actor.damage);
-        snprintf(msg, LOG_LEN, "[%s] EXHAUST → [%s] stamina -%d",
+        snprintf(msg, LOG_LEN, "[%s] EXHAUST -> [%s] stamina -%d",
                  actor.name, tgt.name, actor.damage);
         g_state->log.push(msg);
         actor.stamina = 0;
@@ -417,7 +502,7 @@ static void apply_action(ActionRequest& req) {
         int dmg = WEAPON_TABLE[req.weapon].damage;
         tgt.hp = std::max(0, tgt.hp - dmg);
         tgt.last_hit_time = wallclock_sec();
-        snprintf(msg, LOG_LEN, "[%s] USE %s → [%s] -%d HP (%d/%d)",
+        snprintf(msg, LOG_LEN, "[%s] USE %s -> [%s] -%d HP (%d/%d)",
                  actor.name, WEAPON_TABLE[req.weapon].name, tgt.name, dmg,
                  tgt.hp, tgt.max_hp);
         g_state->log.push(msg);
@@ -430,6 +515,27 @@ static void apply_action(ActionRequest& req) {
             if (tgt.type == ENT_ENEMY) {
                 ++g_state->total_enemies_killed;
                 artifact_release_all(req.target_id);
+
+                // ── Weapon drop trigger (spec §6) ──
+                if (actor.type == ENT_PLAYER &&
+                    !g_state->weapon_drop_pending) {
+                    if ((rand() % 100) < 30) {
+                        WeaponID drop_pool[] = {
+                            WPN_IRON_HALBERD, WPN_VENOM_DAGGER, WPN_THUNDERSTAFF,
+                            WPN_OBSIDIAN_AXE, WPN_FROSTBOW,     WPN_SPLINTER_STICK
+                        };
+                        WeaponID dropped = drop_pool[rand() % 6];
+                        g_state->weapon_drop_pending    = true;
+                        g_state->weapon_drop_id         = dropped;
+                        g_state->weapon_drop_for        = req.entity_id;
+                        g_state->weapon_drop_turns_left = 0;
+                        snprintf(msg, LOG_LEN,
+                            "[DROP] %s dropped \xe2\x80\x94 [%s] press P to pick up!",
+                            WEAPON_TABLE[dropped].name, actor.name);
+                        g_state->log.push(msg);
+                    }
+                }
+
                 if (g_state->total_enemies_killed >= WIN_KILL_COUNT) {
                     g_state->phase = PHASE_WIN;
                     if (WEAPON_TABLE[req.weapon].is_artifact)
@@ -488,7 +594,7 @@ static void apply_action(ActionRequest& req) {
 
     case ACT_SKIP: {
         actor.stamina = actor.max_stamina * 0.50f;
-        snprintf(msg, LOG_LEN, "[%s] SKIP (stamina → 50%%)", actor.name);
+        snprintf(msg, LOG_LEN, "[%s] SKIP (stamina -> 50%%)", actor.name);
         g_state->log.push(msg);
         break;
     }
@@ -546,6 +652,10 @@ static void apply_action(ActionRequest& req) {
         WeaponID wpn = req.weapon;
         if (WEAPON_TABLE[wpn].is_artifact) {
             if (!artifact_acquire(req.entity_id, wpn)) {
+                // Clear drop state even on artifact contention failure
+                g_state->weapon_drop_pending = false;
+                g_state->weapon_drop_id      = WPN_NONE;
+                g_state->weapon_drop_for     = -1;
                 actor.stamina = 0; break;
             }
             bool added = allocator_add(actor.inventory, wpn);
@@ -559,11 +669,23 @@ static void apply_action(ActionRequest& req) {
             }
         } else {
             bool added = allocator_add(actor.inventory, wpn);
-            snprintf(msg, LOG_LEN, "[%s] PICKUP %s: %s",
-                     actor.name, WEAPON_TABLE[wpn].name,
-                     added ? "OK" : "FAIL (no space)");
+            if (added) {
+                snprintf(msg, LOG_LEN, "[%s] picked up %s!",
+                         actor.name, WEAPON_TABLE[wpn].name);
+            } else {
+                snprintf(msg, LOG_LEN, "[%s] no space for %s \xe2\x80\x94 enemy gets it.",
+                         actor.name, WEAPON_TABLE[wpn].name);
+                g_state->log.push(msg);
+                resolve_weapon_drop_fallback_now();
+                actor.stamina = 0;
+                break;
+            }
         }
         g_state->log.push(msg);
+        // Clear the drop offer now that it is resolved
+        g_state->weapon_drop_pending  = false;
+        g_state->weapon_drop_id       = WPN_NONE;
+        g_state->weapon_drop_for      = -1;
         actor.stamina = 0;
         break;
     }
@@ -571,7 +693,7 @@ static void apply_action(ActionRequest& req) {
     case ACT_AOE: {
         // Area-of-effect attack: hits all alive enemies (or players, for NPC actor)
         // within Manhattan distance AOE_RANGE from the actor.
-        constexpr int AOE_RANGE = 4;
+        constexpr int AOE_RANGE = 20;
         int dmg = std::max(1, actor.damage / 2);   // half damage to each
         int hits = 0;
         if (actor.type == ENT_PLAYER) {
@@ -583,7 +705,7 @@ static void apply_action(ActionRequest& req) {
                 tgt.hp = std::max(0, tgt.hp - dmg);
                 tgt.last_hit_time = wallclock_sec();
                 ++hits;
-                snprintf(msg, LOG_LEN, "  AoE → [%s] -%d HP (%d/%d)",
+                snprintf(msg, LOG_LEN, "  AoE -> [%s] -%d HP (%d/%d)",
                          tgt.name, dmg, tgt.hp, tgt.max_hp);
                 g_state->log.push(msg);
                 if (tgt.hp == 0) {
@@ -664,7 +786,7 @@ static void* deadlock_monitor(void*) {
                     rt.entries[a].held_by = -1; rt.entries[a].locked = false;
                     wfg.holding[victim][a] = 0;
                     char msg[LOG_LEN];
-                    snprintf(msg, LOG_LEN, "[Arbiter] DEADLOCK → forced [%s] release %s",
+                    snprintf(msg, LOG_LEN, "[Arbiter] DEADLOCK -> forced [%s] release %s",
                              g_state->entities[victim].name,
                              WEAPON_TABLE[rt.entries[a].id].name);
                     g_state->log.push(msg);
@@ -771,10 +893,18 @@ struct RenderSnapshot {
     int np, ne, killed, active;
     float vtime;
     bool ult, eclipse;
+    double npc_turn_deadline_sec;
     GamePhase phase;
     Entity entities[MAX_ENTITIES];
+    WeaponID artifact_id[NUM_ARTIFACTS];
+    bool artifact_exists[NUM_ARTIFACTS];
+    int  artifact_held_by[NUM_ARTIFACTS];
     char log_lines[LOG_LINES][LOG_LEN];
     int  log_head;
+    // Weapon drop state (rendered from snapshot to avoid extra locking)
+    bool     drop_pending;
+    WeaponID drop_id;
+    int      drop_for;
 };
 
 static void take_snapshot(RenderSnapshot& snap) {
@@ -786,10 +916,43 @@ static void take_snapshot(RenderSnapshot& snap) {
     snap.vtime   = g_state->virtual_time;
     snap.ult     = g_state->ultimate_active;
     snap.eclipse = g_state->eclipse_relic_spawned;
+    snap.npc_turn_deadline_sec = g_state->npc_turn_deadline_sec;
     snap.phase   = g_state->phase;
+    snap.drop_pending = g_state->weapon_drop_pending;
+    snap.drop_id      = g_state->weapon_drop_id;
+    snap.drop_for     = g_state->weapon_drop_for;
     memcpy(snap.entities,  g_state->entities,  sizeof(snap.entities));
+    pthread_mutex_lock(&g_state->resource_table.table_mutex);
+    for (int a = 0; a < NUM_ARTIFACTS; ++a) {
+        snap.artifact_id[a] = g_state->resource_table.entries[a].id;
+        snap.artifact_exists[a] = g_state->resource_table.entries[a].exists;
+        snap.artifact_held_by[a] = g_state->resource_table.entries[a].held_by;
+    }
+    pthread_mutex_unlock(&g_state->resource_table.table_mutex);
     memcpy(snap.log_lines, g_state->log.lines, sizeof(snap.log_lines));
     snap.log_head = g_state->log.head;
+}
+
+static void dump_action_log_to_file(const RenderSnapshot& snap) {
+    bool log_full = snap.log_lines[snap.log_head][0] != '\0';
+    int log_count = log_full ? LOG_LINES : snap.log_head;
+    if (log_count <= 0) return;
+
+    int oldest = log_full ? snap.log_head : 0;
+    FILE* fp = fopen("action_log_dump.txt", "w");
+    if (!fp) return;
+
+    time_t now = time(nullptr);
+    fprintf(fp, "CHRONO RIFT ACTION LOG DUMP\n");
+    fprintf(fp, "Generated: %s", ctime(&now));
+    fprintf(fp, "Entries: %d\n", log_count);
+    fprintf(fp, "----------------------------------------\n");
+    for (int i = 0; i < log_count; ++i) {
+        int idx = (oldest + i) % LOG_LINES;
+        if (!snap.log_lines[idx][0]) continue;
+        fprintf(fp, "%s\n", snap.log_lines[idx]);
+    }
+    fclose(fp);
 }
 
 static void* render_thread(void*) {
@@ -845,9 +1008,18 @@ static void* render_thread(void*) {
 
     // Persistent UI state: which enemy index (0..ne-1) is the current target.
     int sel_target_idx = 0;
+    // Activity-log scroll offset (0 = follow newest line).
+    int log_scroll_offset = 0;
+    // Number of currently valid log lines in the ring buffer.
+    int log_available_lines = 0;
+    bool export_log_requested = false;
     // Wall-clock animation tick (independent of game virtual_time so the
     // sky keeps shimmering even while no actions occur).
     int anim_tick = 0;
+    constexpr int LOG_H = 9;
+    // Last valid player index for inventory display — persists between turns
+    // so the inventory panel never flickers/disappears when active_entity == -1.
+    int display_active = 0;
 
     while (true) {
         ++anim_tick;
@@ -857,6 +1029,20 @@ static void* render_thread(void*) {
         int ch = getch();   // returns ERR after 80ms if no key
 
         if (ch != ERR) {
+            // Log-only navigation keys (independent of game flow).
+            int max_scroll = std::max(0, log_available_lines - (LOG_H - 1));
+            // Support multiple key bindings because some terminals do not
+            // deliver PgUp/PgDn reliably through ncurses.
+            if (ch == KEY_PPAGE || ch == KEY_SR || ch == '[' || ch == ',' || ch == 'z' || ch == 'Z') {
+                log_scroll_offset = std::min(max_scroll, log_scroll_offset + 3);
+            } else if (ch == KEY_NPAGE || ch == KEY_SF || ch == ']' || ch == '.' || ch == 'x' || ch == 'X') {
+                log_scroll_offset = std::max(0, log_scroll_offset - 3);
+            } else if (ch == KEY_HOME) {
+                log_scroll_offset = 0;
+            } else if (ch == 'c' || ch == 'C') {
+                export_log_requested = true;
+            }
+
             pthread_mutex_lock(&g_state->global_mutex);
             int active = g_state->active_entity;
             int np     = g_state->num_players;
@@ -974,7 +1160,7 @@ static void* render_thread(void*) {
                     }
                     case '4': case '5': case '6':
                     case '7': case '8': case '9': {
-                        int n = kc - '4' + 1;       // 4→1, 5→2, ... 9→6
+                        int n = kc - '4' + 1;       // 4->1, 5->2, ... 9->6
                         WeaponID w = nth_weapon(n);
                         int t = current_target();
                         if (w != WPN_NONE && t >= 0) {
@@ -982,6 +1168,13 @@ static void* render_thread(void*) {
                             req.weapon    = w;
                             req.target_id = t;
                             got = true;
+                        } else if (w == WPN_NONE) {
+                            // Log feedback so the player knows why nothing happened
+                            char lmsg[LOG_LEN];
+                            snprintf(lmsg, LOG_LEN,
+                                "[%s] No weapon in slot %d",
+                                g_state->entities[active].name, kc - '0');
+                            g_state->log.push(lmsg);
                         }
                         break;
                     }
@@ -1000,7 +1193,8 @@ static void* render_thread(void*) {
                             g_state->weapon_drop_for == active) {
                             req.action = ACT_PICKUP;
                             req.weapon = g_state->weapon_drop_id;
-                            g_state->weapon_drop_pending = false;
+                            // DO NOT clear weapon_drop_pending here —
+                            // apply_action will clear it after pickup resolves.
                             got = true;
                         }
                         break;
@@ -1051,6 +1245,17 @@ static void* render_thread(void*) {
         take_snapshot(snap);
         pthread_mutex_unlock(&g_state->global_mutex);
 
+        // Derive ring-buffer occupancy from snapshot.
+        bool log_full = snap.log_lines[snap.log_head][0] != '\0';
+        log_available_lines = log_full ? LOG_LINES : snap.log_head;
+        int max_scroll = std::max(0, log_available_lines - (LOG_H - 1));
+        if (log_scroll_offset > max_scroll) log_scroll_offset = max_scroll;
+
+        if (export_log_requested) {
+            dump_action_log_to_file(snap);
+            export_log_requested = false;
+        }
+
         // ── Render from snapshot (no lock held) ─────────────────────
         int rows, cols;
         getmaxyx(stdscr, rows, cols);
@@ -1063,9 +1268,13 @@ static void* render_thread(void*) {
         float vtime = snap.vtime;
         GamePhase phase = snap.phase;
 
+        // Update display_active only when a valid player is active;
+        // keeps inventory panel visible between turns (active == -1).
+        if (active >= 0 && active < np)
+            display_active = active;
+
         constexpr int LEFT_W  = 24;
         constexpr int RIGHT_W = 24;
-        constexpr int LOG_H   = 9;
 
         erase();   // erase() is less flickery than clear()
 
@@ -1079,28 +1288,55 @@ static void* render_thread(void*) {
         mvprintw(0, cols - 26, "Kills:%d/%d  t=%.1f", killed, WIN_KILL_COUNT, vtime);
         attroff(COLOR_PAIR(CP_GOLD) | A_BOLD);
 
+        if (active >= MAX_PLAYERS && active < MAX_PLAYERS + ne && phase == PHASE_RUNNING) {
+            double now_ui = wallclock_sec();
+            double rem = snap.npc_turn_deadline_sec - now_ui;
+            if (rem < 0.0) rem = 0.0;
+            // NPC name on row 1, bar on row 2 — clamped to battlefield area
+            int bar_x = LEFT_W + 2;
+            int bar_end = cols - RIGHT_W - 2;
+            int bar_w = std::max(10, bar_end - bar_x);
+            if (bar_w > 0) {
+                attron(COLOR_PAIR(CP_ENEMY) | A_BOLD | A_BLINK);
+                mvprintw(1, bar_x, ">> [%s] thinking...          ", snap.entities[active].name);
+                attroff(COLOR_PAIR(CP_ENEMY) | A_BOLD | A_BLINK);
+                float ratio = (float)(rem / NPC_TURN_TIMEOUT);
+                if (ratio < 0.0f) ratio = 0.0f;
+                if (ratio > 1.0f) ratio = 1.0f;
+                int filled = (int)(ratio * bar_w);
+                attron(COLOR_PAIR(CP_STUN) | A_BOLD);
+                for (int i = 0; i < filled && bar_x + i < bar_end; ++i)
+                    mvaddch(2, bar_x + i, ACS_BLOCK);
+                attroff(COLOR_PAIR(CP_STUN) | A_BOLD);
+                attron(COLOR_PAIR(CP_BORDER));
+                for (int i = filled; i < bar_w && bar_x + i < bar_end; ++i)
+                    mvaddch(2, bar_x + i, ACS_CKBOARD);
+                attroff(COLOR_PAIR(CP_BORDER));
+                attron(COLOR_PAIR(CP_GOLD));
+                mvprintw(2, bar_x, "NPC timeout: %.1fs ", rem);
+                attroff(COLOR_PAIR(CP_GOLD));
+            }
+        }
+
         if (ult) {
             attron(COLOR_PAIR(CP_ULT) | A_BOLD | A_BLINK);
             mvprintw(0, LEFT_W + 2, "*** ULTIMATE ACTIVE ***");
             attroff(COLOR_PAIR(CP_ULT) | A_BOLD | A_BLINK);
         }
-        // Weapon-drop offer indicator
-        {
-            pthread_mutex_lock(&g_state->global_mutex);
-            bool wd  = g_state->weapon_drop_pending;
-            int  wfor = g_state->weapon_drop_for;
-            WeaponID wid = g_state->weapon_drop_id;
-            pthread_mutex_unlock(&g_state->global_mutex);
-            if (wd && wfor == active && active >= 0 && wid != WPN_NONE) {
-                attron(COLOR_PAIR(CP_GOLD) | A_BOLD | A_BLINK);
-                mvprintw(0, LEFT_W + 2, "DROP: %s — press P to pick up",
-                         WEAPON_TABLE[wid].name);
-                attroff(COLOR_PAIR(CP_GOLD) | A_BOLD | A_BLINK);
-            }
+        // Weapon-drop offer indicator — prominent banner on row 1
+        if (snap.drop_pending && snap.drop_for == active &&
+            active >= 0 && snap.drop_id != WPN_NONE) {
+            int banner_x = LEFT_W + 2;
+            attron(COLOR_PAIR(CP_GOLD) | A_BOLD | A_BLINK);
+            mvprintw(1, banner_x, ">>> DROP: %s (dmg:%d slots:%d) — press P to pick up! <<<",
+                     WEAPON_TABLE[snap.drop_id].name,
+                     WEAPON_TABLE[snap.drop_id].damage,
+                     WEAPON_TABLE[snap.drop_id].slot_size);
+            attroff(COLOR_PAIR(CP_GOLD) | A_BOLD | A_BLINK);
         }
 
         // ─── Open-scene battlefield (no bounding box) ───────────────
-        // The arena is drawn as a sky → mountains → ground scene. Heroes
+        // The arena is drawn as a sky -> mountains -> ground scene. Heroes
         // and enemies stand on a wavy ground line. No hard border.
         int bf_x0 = LEFT_W + 1;
         int bf_x1 = cols - RIGHT_W - 1;
@@ -1137,7 +1373,7 @@ static void* render_thread(void*) {
                 if (hr >= 8) continue;
                 int phase = (h >> 3) & 7;           // 0..7 phase per star
                 int beat  = (blink_tick + phase) & 7;
-                // Three-frame "shimmer" cycle: dim → bright → off → dim
+                // Three-frame "shimmer" cycle: dim -> bright -> off -> dim
                 char ch_star;
                 int  cp_star;
                 int  attr = A_BOLD;
@@ -1228,7 +1464,7 @@ static void* render_thread(void*) {
         }
 
         // ── Sprite rendering ────────────────────────────────────────
-        // bf coords (1..BF_W, 1..BF_H) → screen cells.  Sprites are snapped
+        // bf coords (1..BF_W, 1..BF_H) -> screen cells.  Sprites are snapped
         // to the wavy ground; BF-y adds a small depth/perspective offset
         // (high BF y = front of arena, low BF y = back).
         // Safe vertical band for sprites — keeps them on/around the
@@ -1242,7 +1478,7 @@ static void* render_thread(void*) {
             if (gx < 0) gx = 0;
             if (gx >= gw) gx = gw - 1;
             int gy = ground_row[gx];
-            // Depth: bigger by → closer to camera → drawn lower (closer to ground).
+            // Depth: bigger by -> closer to camera -> drawn lower (closer to ground).
             // Use a small fraction so vertical motion is gentle (avoids the
             // sprite jumping wildly across the screen on each y change).
             int depth_max = std::max(1, bf_h_px / 8);
@@ -1442,8 +1678,12 @@ static void* render_thread(void*) {
                 draw_bar_w(lr, 4, e.stamina, e.max_stamina, 14, sp_pair, CP_BORDER);
                 if (e.stunned) {
                     attron(COLOR_PAIR(CP_STUN) | A_BLINK | A_BOLD);
-                    mvprintw(lr, 19, " STN");
+                    mvprintw(lr, 19, "S%2.0f", e.stamina);
                     attroff(COLOR_PAIR(CP_STUN) | A_BLINK | A_BOLD);
+                } else {
+                    attron(COLOR_PAIR(CP_SP_BAR));
+                    mvprintw(lr, 19, "%3.0f/%-3.0f", e.stamina, e.max_stamina);
+                    attroff(COLOR_PAIR(CP_SP_BAR));
                 }
                 ++lr;
             }
@@ -1465,8 +1705,8 @@ static void* render_thread(void*) {
         }
 
         // Active-player inventory panel (under players list)
-        if (active >= 0 && active < np) {
-            Entity& me = snap.entities[active];
+        if (display_active >= 0 && display_active < np) {
+            Entity& me = snap.entities[display_active];
             int iy = lr;
             if (iy < rows - LOG_H - 8) {
                 attron(COLOR_PAIR(CP_HEADER) | A_BOLD | A_UNDERLINE);
@@ -1521,18 +1761,24 @@ static void* render_thread(void*) {
             }
         }
 
-        attron(COLOR_PAIR(CP_LOG));
-        int ch_y = rows - LOG_H - 7;
-        if (ch_y > lr) {
-            mvprintw(ch_y,   1, "WASD: free move");
-            mvprintw(ch_y+1, 1, "<-/->: pick target");
-            mvprintw(ch_y+2, 1, "1:Strike 2:Exhaust");
-            mvprintw(ch_y+3, 1, "3:AoE  4-9:Weapon");
-            mvprintw(ch_y+4, 1, "V:swap-in  H:heal");
-            mvprintw(ch_y+5, 1, "K:skip U:ult P:pick");
-            mvprintw(ch_y+6, 1, "Q:quit");
+        // Controls help — always visible at fixed position above the log panel.
+        // Placed at a guaranteed position so it never gets pushed off-screen
+        // by large player counts.
+        {
+            int ctrl_y = rows - LOG_H - 8;
+            if (ctrl_y < lr) ctrl_y = lr;  // don't overlap with panels above
+            if (ctrl_y + 7 < rows - LOG_H) {
+                attron(COLOR_PAIR(CP_LOG));
+                mvprintw(ctrl_y,   1, "WASD: free move       ");
+                mvprintw(ctrl_y+1, 1, "<-/->: pick target    ");
+                mvprintw(ctrl_y+2, 1, "1:Strike 2:Exhaust    ");
+                mvprintw(ctrl_y+3, 1, "3:AoE  4-9:Use Weapon ");
+                mvprintw(ctrl_y+4, 1, "V:swap-in  H:heal     ");
+                mvprintw(ctrl_y+5, 1, "K/Spc:skip U:ultimate ");
+                mvprintw(ctrl_y+6, 1, "P:pick up  Q:quit     ");
+                attroff(COLOR_PAIR(CP_LOG));
+            }
         }
-        attroff(COLOR_PAIR(CP_LOG));
 
         // Right Panel: Enemies
         int rpx = cols - RIGHT_W + 1;
@@ -1574,9 +1820,19 @@ static void* render_thread(void*) {
                 draw_bar_w(rr, rpx + 3, e.stamina, e.max_stamina, 14, CP_SP_BAR, CP_BORDER);
                 if (e.stunned) {
                     attron(COLOR_PAIR(CP_STUN) | A_BOLD | A_BLINK);
-                    mvaddstr(rr, rpx + 18, " S");
+                    mvprintw(rr, rpx + 15, "S%2.0f/%-2.0f", e.stamina, e.max_stamina);
                     attroff(COLOR_PAIR(CP_STUN) | A_BOLD | A_BLINK);
+                } else {
+                    attron(COLOR_PAIR(CP_SP_BAR));
+                    mvprintw(rr, rpx + 15, "%3.0f/%-3.0f", e.stamina, e.max_stamina);
+                    attroff(COLOR_PAIR(CP_SP_BAR));
                 }
+                ++rr;
+            }
+            if (rr < rows - LOG_H - 1) {
+                attron(COLOR_PAIR(CP_SPEED));
+                mvprintw(rr, rpx, " Spd:%2.0f Dmg:%2d", e.speed, e.damage);
+                attroff(COLOR_PAIR(CP_SPEED));
                 ++rr;
             }
             ++rr;
@@ -1589,7 +1845,7 @@ static void* render_thread(void*) {
         for (int i = 0; i < ne; ++i)
             if (snap.entities[MAX_PLAYERS+i].alive) ++alive_e;
 
-        int pop_y = rows - LOG_H - 5;
+        int pop_y = rows - LOG_H - 10;
         if (pop_y > rr) {
             attron(COLOR_PAIR(CP_BORDER) | A_BOLD);
             mvprintw(pop_y, rpx, "Population:");
@@ -1610,6 +1866,24 @@ static void* render_thread(void*) {
                 mvprintw(pop_y + 3, rpx, "[ECLIPSE RELIC LIVE]");
                 attroff(COLOR_PAIR(CP_ARTIFACT) | A_BOLD | A_BLINK);
             }
+
+            int art_y = pop_y + 5;
+            if (art_y + 3 < rows - LOG_H) {
+                attron(COLOR_PAIR(CP_ARTIFACT) | A_BOLD | A_UNDERLINE);
+                mvprintw(art_y, rpx, "ARTIFACTS");
+                attroff(COLOR_PAIR(CP_ARTIFACT) | A_BOLD | A_UNDERLINE);
+                for (int a = 0; a < NUM_ARTIFACTS; ++a) {
+                    int holder = snap.artifact_held_by[a];
+                    const char* holder_name = "FREE";
+                    if (holder >= 0 && holder < MAX_ENTITIES) {
+                        holder_name = snap.entities[holder].name;
+                    }
+                    mvprintw(art_y + 1 + a, rpx, "%-7s %c %-8.8s",
+                             WEAPON_TABLE[snap.artifact_id[a]].name,
+                             snap.artifact_exists[a] ? 'Y' : 'N',
+                             holder_name);
+                }
+            }
         }
 
         // Log panel
@@ -1621,11 +1895,21 @@ static void* render_thread(void*) {
         attron(COLOR_PAIR(CP_GOLD) | A_BOLD | A_UNDERLINE);
         mvprintw(log_start, 1, " ACTION LOG ");
         attroff(COLOR_PAIR(CP_GOLD) | A_BOLD | A_UNDERLINE);
+        attron(COLOR_PAIR(CP_BORDER));
+        int max_scroll_now = std::max(0, log_available_lines - (LOG_H - 1));
+        mvprintw(log_start, 15, "[PgUp/PgDn [ ] , . Z/X Home C=export] lines:%d off:%d/%d",
+                 log_available_lines, log_scroll_offset, max_scroll_now);
+        attroff(COLOR_PAIR(CP_BORDER));
 
         int lines_show = LOG_H - 1;
         int head = snap.log_head;
+        bool log_ring_full = snap.log_lines[head][0] != '\0';
+        int log_count = log_ring_full ? LOG_LINES : head;
+        int newest = (head - 1 + LOG_LINES) % LOG_LINES;
+        int first_idx = (newest - log_scroll_offset - (lines_show - 1) + LOG_LINES) % LOG_LINES;
+        if (log_count <= 0) first_idx = head;
         for (int i = 0; i < lines_show; ++i) {
-            int idx = ((head - lines_show + i) % LOG_LINES + LOG_LINES) % LOG_LINES;
+            int idx = (first_idx + i) % LOG_LINES;
             if (!snap.log_lines[idx][0]) continue;
             char trunc[120];
             snprintf(trunc, sizeof(trunc), "%.116s", snap.log_lines[idx]);
@@ -1644,6 +1928,27 @@ static void* render_thread(void*) {
             attron(COLOR_PAIR(lcp));
             mvprintw(lrow, 1, " %s", trunc);
             attroff(COLOR_PAIR(lcp));
+        }
+
+        // Visual scrollbar on the right edge of the log panel.
+        if (cols > 2 && lines_show > 0 && log_count > lines_show) {
+            int track_x = cols - 1;
+            int track_top = log_start + 1;
+            int track_h = std::min(lines_show, rows - track_top);
+            if (track_h > 0) {
+                int max_scroll = std::max(1, log_count - lines_show);
+                int thumb_h = std::max(1, (lines_show * track_h) / std::max(log_count, 1));
+                if (thumb_h > track_h) thumb_h = track_h;
+                int thumb_y = track_top + ((track_h - thumb_h) * log_scroll_offset) / max_scroll;
+
+                attron(COLOR_PAIR(CP_BORDER));
+                for (int r = 0; r < track_h; ++r) mvaddch(track_top + r, track_x, ACS_CKBOARD);
+                attroff(COLOR_PAIR(CP_BORDER));
+
+                attron(COLOR_PAIR(CP_GOLD) | A_BOLD);
+                for (int r = 0; r < thumb_h; ++r) mvaddch(thumb_y + r, track_x, ACS_BLOCK);
+                attroff(COLOR_PAIR(CP_GOLD) | A_BOLD);
+            }
         }
 
         // Mid-game overlays
@@ -1935,7 +2240,7 @@ int main(int argc, char* argv[]) {
         g_state->entities[i].damage   = (roll_no % 10) + 10;
         g_state->entities[i].speed    = 100.0f / num_players;
         g_state->entities[i].max_stamina = 100.0f;
-        g_state->entities[i].stamina  = 0.0f;
+        g_state->entities[i].stamina  = (g_state->entities[i].max_stamina * i) / std::max(1, num_players);
 
         g_state->player_actions[i].ready = false;
         // Heroes line up across the foreground (high BF y = closer to camera).
@@ -2025,6 +2330,7 @@ int main(int argc, char* argv[]) {
         }
 
         g_state->active_entity = next;
+        g_state->npc_turn_deadline_sec = 0.0;
         pthread_cond_broadcast(&g_state->turn_cond);
 
         Entity& actor = g_state->entities[next];
@@ -2058,6 +2364,7 @@ int main(int argc, char* argv[]) {
             deadline.tv_sec += NPC_TURN_TIMEOUT;
 
             pthread_mutex_lock(&g_state->global_mutex);
+            g_state->npc_turn_deadline_sec = deadline.tv_sec + deadline.tv_nsec / 1e9;
             pthread_cond_broadcast(&g_state->turn_cond);
 
             bool timed_out = false;
@@ -2071,13 +2378,14 @@ int main(int argc, char* argv[]) {
             }
             if (timed_out) {
                 req.entity_id = next; req.action = ACT_SKIP;
-                snprintf(msg, LOG_LEN, "[Arbiter] NPC [%s] timeout → SKIP",
+                snprintf(msg, LOG_LEN, "[Arbiter] NPC [%s] timeout -> SKIP",
                          g_state->entities[next].name);
                 g_state->log.push(msg);
             } else {
                 req = g_state->npc_action;
                 g_state->npc_action.ready = false;
             }
+            g_state->npc_turn_deadline_sec = 0.0;
             pthread_mutex_unlock(&g_state->global_mutex);
         }
 
@@ -2087,6 +2395,7 @@ int main(int argc, char* argv[]) {
         maybe_spawn_wave();
         check_game_over();
         g_state->active_entity = -1;
+        g_state->npc_turn_deadline_sec = 0.0;
         pthread_cond_broadcast(&g_state->turn_cond);
         pthread_mutex_unlock(&g_state->global_mutex);
     }
