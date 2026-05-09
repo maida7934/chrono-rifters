@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY . .
 
-# Do NOT build during image creation — build inside container for live code changes
-# RUN make
+# Build all binaries during image creation
+RUN make
 
 CMD ["bash"]

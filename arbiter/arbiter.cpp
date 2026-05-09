@@ -2234,7 +2234,11 @@ static void* render_thread(void*) {
 
  // ── Full-screen GAME-OVER screens ──
  if (phase == PHASE_WIN || phase == PHASE_LOSE || phase == PHASE_QUIT) {
- erase();
+ clear(); // clear() forces full terminal redraw (unlike erase)
+ // Blank every cell to kill any bleed-through from the game screen
+ for (int r = 0; r < rows; ++r)
+ for (int c = 0; c < cols; ++c)
+  mvaddch(r, c, ' ');
 
  // Tally per-player stats from the snapshot.
  int alive_p = 0, dead_p = 0;
@@ -2854,11 +2858,11 @@ int main(int argc, char* argv[]) {
  }
 
 done:
- printf("[Arbiter] Game over — phase=%d\n", (int)g_state->phase);
+ fprintf(stderr, "[Arbiter] Game over — phase=%d\n", (int)g_state->phase);
  if (g_state->phase == PHASE_WIN)
- printf("VICTORY! %d enemies defeated.\n", g_state->total_enemies_killed);
+ fprintf(stderr, "VICTORY! %d enemies defeated.\n", g_state->total_enemies_killed);
  if (g_state->phase == PHASE_LOSE)
- printf("DEFEAT. All heroes fell.\n");
+ fprintf(stderr, "DEFEAT. All heroes fell.\n");
 
  if (g_hip_pid > 0) kill(g_hip_pid, SIGTERM);
  if (g_hip_pid_b > 0) kill(g_hip_pid_b, SIGTERM);

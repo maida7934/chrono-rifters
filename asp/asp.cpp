@@ -19,7 +19,6 @@
 static SharedState* g_state = nullptr;
 static volatile sig_atomic_t g_running = 1;
 static pthread_t g_threads[MAX_ENEMIES];
-static int g_num_threads = 0;
 static bool tracked_dead[MAX_ENEMIES] = {};
 
 struct NpcArg { int enemy_slot; SharedState* state; };
@@ -84,15 +83,26 @@ static void* npc_thread(void* arg_ptr) {
 
  while (g_running) {
  pthread_mutex_lock(&s->global_mutex);
+ // Exit early if entity died (wave ended) — the manager loop will
+ // join this thread and respawn one for the next wave.
+ if (!s->entities[slot].alive) {
+ pthread_mutex_unlock(&s->global_mutex);
+ return nullptr;
+ }
  while (s->active_entity != slot) {
  if (!g_running || s->phase == PHASE_QUIT ||
  s->phase == PHASE_WIN || s->phase == PHASE_LOSE) {
  pthread_mutex_unlock(&s->global_mutex);
  return nullptr;
  }
+ // Also break out if entity died while waiting
+ if (!s->entities[slot].alive) {
+ pthread_mutex_unlock(&s->global_mutex);
+ return nullptr;
+ }
  pthread_cond_wait(&s->turn_cond, &s->global_mutex);
  }
- if (!s->entities[slot].alive) { pthread_mutex_unlock(&s->global_mutex); continue; }
+ if (!s->entities[slot].alive) { pthread_mutex_unlock(&s->global_mutex); return nullptr; }
 
  // Stun wait
  while (s->entities[slot].stunned) {
@@ -115,12 +125,34 @@ static void* npc_thread(void* arg_ptr) {
  Entity& tp = s->entities[target];
  dist = std::abs(tp.x - me.x) + std::abs(tp.y - me.y);
  }
+
+ // RUBRIC: Enemy Behavior & Decision Logic.
+ // Check if this enemy holds any usable weapon in primary inventory.
+ WeaponID best_wpn = WPN_NONE;
+ int best_dmg = 0;
+ {
+ Inventory& inv = s->entities[slot].inventory;
+ int seen[WPN_COUNT] = {};
+ for (int si = 0; si < INVENTORY_SLOTS; ++si) {
+ int w = inv.slots[si];
+ if (w == WPN_NONE || w < 0 || w >= WPN_COUNT || seen[w]) continue;
+ seen[w] = 1;
+ if (WEAPON_TABLE[w].damage > best_dmg) {
+  best_dmg = WEAPON_TABLE[w].damage;
+  best_wpn = (WeaponID)w;
+ }
+ }
+ }
  pthread_mutex_unlock(&s->global_mutex);
 
- // RUBRIC: Enemy Behavior & Decision Logic - spec-aligned (STRIKE / SKIP only).
  int roll = rand() % 100;
  if (target < 0) {
  req.action = ACT_SKIP;
+ } else if (best_wpn != WPN_NONE && roll < 40) {
+ // Use the strongest held weapon ~40% of the time
+ req.action = ACT_USE_WEAPON;
+ req.weapon = best_wpn;
+ req.target_id = target;
  } else if (dist <= 4) {
  // Right next to a hero — strike almost always.
  if (roll < 92) {
@@ -154,29 +186,10 @@ static void* npc_thread(void* arg_ptr) {
  return nullptr;
 }
 
-static void* death_watcher(void*) {
- while (g_running) {
- usleep(200000);
- if (!g_state) continue;
- pthread_mutex_lock(&g_state->global_mutex);
- GamePhase ph = g_state->phase;
- int ne = g_state->num_enemies;
- pthread_mutex_unlock(&g_state->global_mutex);
- if (ph != PHASE_RUNNING && ph != PHASE_ULTIMATE_PAUSE) break;
- for (int i = 0; i < ne; ++i) {
- int slot = MAX_PLAYERS + i;
- pthread_mutex_lock(&g_state->global_mutex);
- bool dead = !g_state->entities[slot].alive;
- pthread_mutex_unlock(&g_state->global_mutex);
- if (dead && !tracked_dead[i]) {
- tracked_dead[i] = true;
- maybe_drop_weapon(g_state, slot);
- }
- }
- }
- return nullptr;
-}
-
+// RUBRIC: Thread-per-NPC Implementation — thread lifecycle manager.
+// Continuously monitors enemy slots: joins threads for dead enemies,
+// spawns fresh threads when the Arbiter repopulates slots for new waves.
+// This ensures every wave's enemies have a dedicated driving thread.
 int main() {
  g_state = shm_attach();
  if (!g_state) { fprintf(stderr, "[ASP] SHM attach failed\n"); return 1; }
@@ -186,21 +199,70 @@ int main() {
  sa.sa_handler = handle_sigterm; sigaction(SIGTERM, &sa, nullptr);
  sa.sa_handler = handle_stun; sigaction(SIGUSR1, &sa, nullptr);
 
- int ne = g_state->num_enemies; g_num_threads = ne;
- fprintf(stderr, "[ASP] %d NPC thread(s)\n", ne);
-
  // RUBRIC: Efficient Thread Scheduling & Coordination - one thread per enemy.
  NpcArg args[MAX_ENEMIES];
+ bool thread_active[MAX_ENEMIES] = {};
+
+ // Spawn initial wave threads
+ int ne = g_state->num_enemies;
+ fprintf(stderr, "[ASP] initial %d NPC thread(s)\n", ne);
  for (int i = 0; i < ne; ++i) {
  args[i].enemy_slot = MAX_PLAYERS + i; args[i].state = g_state;
  tracked_dead[i] = false;
  pthread_create(&g_threads[i], nullptr, npc_thread, &args[i]);
+ thread_active[i] = true;
  }
- pthread_t t_watcher;
- pthread_create(&t_watcher, nullptr, death_watcher, nullptr);
- for (int i = 0; i < ne; ++i) pthread_join(g_threads[i], nullptr);
+
+ // Wave-aware thread lifecycle loop
+ while (g_running) {
+ usleep(200000); // 200ms poll
+
+ pthread_mutex_lock(&g_state->global_mutex);
+ GamePhase ph = g_state->phase;
+ ne = g_state->num_enemies;
+ pthread_mutex_unlock(&g_state->global_mutex);
+
+ if (ph == PHASE_QUIT || ph == PHASE_WIN || ph == PHASE_LOSE) break;
+
+ for (int i = 0; i < ne; ++i) {
+ int slot = MAX_PLAYERS + i;
+
+ pthread_mutex_lock(&g_state->global_mutex);
+ bool alive = g_state->entities[slot].alive;
+ pthread_mutex_unlock(&g_state->global_mutex);
+
+ // Join dead threads
+ if (!alive && thread_active[i]) {
+ pthread_join(g_threads[i], nullptr);
+ thread_active[i] = false;
+ if (!tracked_dead[i]) {
+  tracked_dead[i] = true;
+  maybe_drop_weapon(g_state, slot);
+ }
+ }
+
+ // Spawn thread for newly alive enemy (new wave respawn)
+ if (alive && !thread_active[i]) {
+ args[i].enemy_slot = slot;
+ args[i].state = g_state;
+ tracked_dead[i] = false;
+ pthread_create(&g_threads[i], nullptr, npc_thread, &args[i]);
+ thread_active[i] = true;
+ fprintf(stderr, "[ASP] spawned thread for %s (slot %d)\n",
+  g_state->entities[slot].name, slot);
+ }
+ }
+ }
+
+ // Cleanup: join any remaining active threads
  g_running = 0;
- pthread_join(t_watcher, nullptr);
+ pthread_cond_broadcast(&g_state->turn_cond);
+ for (int i = 0; i < MAX_ENEMIES; ++i) {
+ if (thread_active[i]) {
+ pthread_join(g_threads[i], nullptr);
+ thread_active[i] = false;
+ }
+ }
  fprintf(stderr, "[ASP] done\n");
  shm_detach(g_state);
  return 0;
