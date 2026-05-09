@@ -39,6 +39,20 @@ static void handle_sigterm(int) {
     if (g_state) pthread_cond_broadcast(&g_state->turn_cond);
 }
 
+static bool consume_ui_quit_request_locked(SharedState* s, int pidx) {
+    if (!s->quit_requested) return false;
+    if (s->quit_requested_by >= 0 && s->quit_requested_by != pidx) return false;
+
+    char msg[LOG_LEN];
+    snprintf(msg, LOG_LEN,
+             "[HIP] %s requested quit - sending SIGTERM to Arbiter.",
+             s->entities[pidx].name);
+    s->log.push(msg);
+    s->quit_requested = false;
+    s->quit_requested_by = -1;
+    return true;
+}
+
 struct ThreadArg { int player_idx; SharedState* state; };
 
 static void print_menu(SharedState* s, int pidx) {
@@ -140,7 +154,19 @@ static void* player_thread(void* arg_ptr) {
 
     while (g_running) {
         pthread_mutex_lock(&s->global_mutex);
+        if (consume_ui_quit_request_locked(s, pidx)) {
+            pthread_mutex_unlock(&s->global_mutex);
+            kill(s->arbiter_pid, SIGTERM);
+            g_running = 0;
+            return nullptr;
+        }
         while (s->active_entity != pidx) {
+            if (consume_ui_quit_request_locked(s, pidx)) {
+                pthread_mutex_unlock(&s->global_mutex);
+                kill(s->arbiter_pid, SIGTERM);
+                g_running = 0;
+                return nullptr;
+            }
             if (!g_running || s->phase == PHASE_QUIT ||
                 s->phase == PHASE_WIN || s->phase == PHASE_LOSE) {
                 pthread_mutex_unlock(&s->global_mutex);
@@ -153,6 +179,12 @@ static void* player_thread(void* arg_ptr) {
         // Stun wait
         pthread_mutex_lock(&s->global_mutex);
         while (s->entities[pidx].stunned) {
+            if (consume_ui_quit_request_locked(s, pidx)) {
+                pthread_mutex_unlock(&s->global_mutex);
+                kill(s->arbiter_pid, SIGTERM);
+                g_running = 0;
+                return nullptr;
+            }
             hip_print("[%s] STUNNED — waiting...\n", s->entities[pidx].name);
             pthread_cond_wait(&s->turn_cond, &s->global_mutex);
             if (!g_running) { pthread_mutex_unlock(&s->global_mutex); return nullptr; }
@@ -162,8 +194,15 @@ static void* player_thread(void* arg_ptr) {
         // If ncurses UI active, just wait for render_thread to inject action
         if (s->use_ncurses_ui) {
             while (s->active_entity == pidx && !s->player_actions[pidx].ready &&
-                   s->phase == PHASE_RUNNING && g_running)
+                   s->phase == PHASE_RUNNING && g_running) {
+                if (consume_ui_quit_request_locked(s, pidx)) {
+                    pthread_mutex_unlock(&s->global_mutex);
+                    kill(s->arbiter_pid, SIGTERM);
+                    g_running = 0;
+                    return nullptr;
+                }
                 pthread_cond_wait(&s->turn_cond, &s->global_mutex);
+            }
             pthread_mutex_unlock(&s->global_mutex);
             continue;
         }

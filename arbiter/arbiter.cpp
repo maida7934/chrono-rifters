@@ -51,6 +51,13 @@ static volatile sig_atomic_t g_sigterm_received = 0;
 static volatile sig_atomic_t g_sigalrm_received = 0;
 static volatile sig_atomic_t g_sigchld_received  = 0;
 
+// ── Smooth stamina-bar interpolation state ──
+// Written by the main loop after apply_action() under global_mutex;
+// read by the render thread in take_snapshot() under the same lock.
+static double g_action_walltime = 0.0;
+static float  g_base_stamina[MAX_ENTITIES] = {};
+static bool   g_interp_valid = false;
+
 // Battlefield logical bounds
 constexpr int BF_W = 80;
 constexpr int BF_H = 26;
@@ -149,7 +156,7 @@ static void maybe_spawn_wave() {
              ++g_wave_index, killed, WIN_KILL_COUNT);
     g_state->log.push(msg);
 
-    int roll_no = (rand() % 90) + 10;
+    int roll_no = g_state->roll_no;
 
     // First, revive dead slots in-place
     for (int i = 0; i < g_state->num_enemies && alive < want; ++i) {
@@ -313,12 +320,44 @@ static void resolve_weapon_drop_fallback_now() {
         return;
     }
 
+    if (WEAPON_TABLE[dropped].is_artifact) {
+        bool picked = false;
+        for (int i = 0; i < g_state->num_enemies; ++i) {
+            Entity& e = g_state->entities[MAX_PLAYERS + i];
+            if (!e.alive) continue;
+            if (!artifact_acquire(e.id, dropped)) continue;
+            if (allocator_add(e.inventory, dropped)) {
+                char msg[LOG_LEN];
+                snprintf(msg, LOG_LEN,
+                         "[%s] claimed unpicked artifact %s.",
+                         e.name, WEAPON_TABLE[dropped].name);
+                g_state->log.push(msg);
+                picked = true;
+                break;
+            }
+            artifact_release(e.id, dropped);
+        }
+        if (!picked) {
+            char msg[LOG_LEN];
+            snprintf(msg, LOG_LEN, "[Drop] %s remains in the arena.",
+                     WEAPON_TABLE[dropped].name);
+            g_state->log.push(msg);
+        }
+        g_state->weapon_drop_pending = false;
+        g_state->weapon_drop_id = WPN_NONE;
+        g_state->weapon_drop_for = -1;
+        g_state->weapon_drop_turns_left = 0;
+        return;
+    }
+
     // Spec §6: enemy is GUARANTEED to pick it up.
     // Iterate alive enemies sequentially; give to the first with space.
     bool picked = false;
+    int first_alive_enemy = -1;
     for (int i = 0; i < g_state->num_enemies; ++i) {
         Entity& e = g_state->entities[MAX_PLAYERS + i];
         if (!e.alive) continue;
+        if (first_alive_enemy < 0) first_alive_enemy = MAX_PLAYERS + i;
         bool added = allocator_add(e.inventory, dropped);
         if (added) {
             char msg[LOG_LEN];
@@ -327,6 +366,18 @@ static void resolve_weapon_drop_fallback_now() {
             g_state->log.push(msg);
             picked = true;
             break;  // only one enemy gets it
+        }
+    }
+    if (!picked && first_alive_enemy >= 0) {
+        Entity& e = g_state->entities[first_alive_enemy];
+        if (e.inventory.lt_count < MAX_LT_STORAGE) {
+            e.inventory.lt_storage[e.inventory.lt_count++] = (int)dropped;
+            char msg[LOG_LEN];
+            snprintf(msg, LOG_LEN,
+                     "[%s] picked up dropped %s into long-term storage.",
+                     e.name, WEAPON_TABLE[dropped].name);
+            g_state->log.push(msg);
+            picked = true;
         }
     }
     if (!picked) {
@@ -346,25 +397,64 @@ static void resolve_weapon_drop_fallback_now() {
 // ─────────────────────────────────────────────
 //  Apply action
 // ─────────────────────────────────────────────
+static bool enemy_holds_any_weapon(int enemy_id) {
+    if (enemy_id < MAX_PLAYERS || enemy_id >= MAX_ENTITIES) return false;
+    Inventory& inv = g_state->entities[enemy_id].inventory;
+    for (int i = 0; i < INVENTORY_SLOTS; ++i)
+        if (inv.slots[i] != WPN_NONE) return true;
+    return false;
+}
+
+static void maybe_start_weapon_drop(int killer_id, int dead_enemy_id) {
+    if (killer_id < 0 || killer_id >= MAX_PLAYERS) return;
+    if (dead_enemy_id < MAX_PLAYERS || dead_enemy_id >= MAX_ENTITIES) return;
+    if (g_state->weapon_drop_pending) return;
+
+    char msg[LOG_LEN];
+    Entity& dead_enemy = g_state->entities[dead_enemy_id];
+    if (enemy_holds_any_weapon(dead_enemy_id)) {
+        snprintf(msg, LOG_LEN,
+                 "[DROP] %s died holding a weapon; NPC-held weapons do not drop.",
+                 dead_enemy.name);
+        g_state->log.push(msg);
+        return;
+    }
+
+    if ((rand() % 100) >= 30) {
+        snprintf(msg, LOG_LEN, "[DROP] %s dropped nothing.", dead_enemy.name);
+        g_state->log.push(msg);
+        return;
+    }
+
+    WeaponID drop_pool[] = {
+        WPN_IRON_HALBERD, WPN_VENOM_DAGGER, WPN_THUNDERSTAFF,
+        WPN_OBSIDIAN_AXE, WPN_FROSTBOW,     WPN_SPLINTER_STICK
+    };
+    WeaponID dropped = drop_pool[rand() % 6];
+    g_state->weapon_drop_pending    = true;
+    g_state->weapon_drop_id         = dropped;
+    g_state->weapon_drop_for        = killer_id;
+    g_state->weapon_drop_turns_left = 0;
+    snprintf(msg, LOG_LEN,
+             "[DROP] %s dropped from %s - [%s] press P on next turn!",
+             WEAPON_TABLE[dropped].name, dead_enemy.name,
+             g_state->entities[killer_id].name);
+    g_state->log.push(msg);
+}
+
 static void apply_action(ActionRequest& req) {
     Entity& actor = g_state->entities[req.entity_id];
     char msg[LOG_LEN];
 
-    // Spec §6: if a weapon drop is pending for this player and they chose
-    // anything other than ACT_PICKUP, check the grace period.
+    // Spec Section 6: the offer stays open until that player's next action.
+    // Pressing P picks it up; any other action gives it to an enemy.
     if (g_state->weapon_drop_pending &&
         g_state->weapon_drop_for == req.entity_id &&
         req.action != ACT_PICKUP) {
-        if (g_state->weapon_drop_turns_left <= 0) {
-            // Grace period expired — enemy guaranteed pickup
-            snprintf(msg, LOG_LEN, "[%s] ignored %s -> enemy picks it up.",
-                     actor.name, WEAPON_TABLE[g_state->weapon_drop_id].name);
-            g_state->log.push(msg);
-            resolve_weapon_drop_fallback_now();
-        } else {
-            // Still within grace period — decrement and let player act
-            --g_state->weapon_drop_turns_left;
-        }
+        snprintf(msg, LOG_LEN, "[%s] ignored %s -> enemy picks it up.",
+                 actor.name, WEAPON_TABLE[g_state->weapon_drop_id].name);
+        g_state->log.push(msg);
+        resolve_weapon_drop_fallback_now();
     }
 
     switch (req.action) {
@@ -434,28 +524,13 @@ static void apply_action(ActionRequest& req) {
                 ++g_state->total_enemies_killed;
                 artifact_release_all(req.target_id);
 
-                // ── Weapon drop trigger (spec §6: 30% chance) ──
-                if (actor.type == ENT_PLAYER &&
-                    !g_state->weapon_drop_pending) {
-                    if ((rand() % 100) < 30) {
-                        WeaponID drop_pool[] = {
-                            WPN_IRON_HALBERD, WPN_VENOM_DAGGER, WPN_THUNDERSTAFF,
-                            WPN_OBSIDIAN_AXE, WPN_FROSTBOW,     WPN_SPLINTER_STICK
-                        };
-                        WeaponID dropped = drop_pool[rand() % 6];
-                        g_state->weapon_drop_pending    = true;
-                        g_state->weapon_drop_id         = dropped;
-                        g_state->weapon_drop_for        = req.entity_id;
-                        g_state->weapon_drop_turns_left = 1; // 1-turn grace
-                        snprintf(msg, LOG_LEN,
-                            "[DROP] %s dropped \xe2\x80\x94 [%s] press P to pick up!",
-                            WEAPON_TABLE[dropped].name, actor.name);
-                        g_state->log.push(msg);
-                    }
-                }
+                maybe_start_weapon_drop(req.entity_id, req.target_id);
 
                 if (g_state->total_enemies_killed >= WIN_KILL_COUNT)
                     { g_state->phase = PHASE_WIN; actor.stamina = 0; return; }
+            } else if (tgt.type == ENT_PLAYER && check_game_over()) {
+                actor.stamina = 0;
+                return;
             }
         }
         actor.stamina = 0;
@@ -518,25 +593,7 @@ static void apply_action(ActionRequest& req) {
                 ++g_state->total_enemies_killed;
                 artifact_release_all(req.target_id);
 
-                // ── Weapon drop trigger (spec §6) ──
-                if (actor.type == ENT_PLAYER &&
-                    !g_state->weapon_drop_pending) {
-                    if ((rand() % 100) < 30) {
-                        WeaponID drop_pool[] = {
-                            WPN_IRON_HALBERD, WPN_VENOM_DAGGER, WPN_THUNDERSTAFF,
-                            WPN_OBSIDIAN_AXE, WPN_FROSTBOW,     WPN_SPLINTER_STICK
-                        };
-                        WeaponID dropped = drop_pool[rand() % 6];
-                        g_state->weapon_drop_pending    = true;
-                        g_state->weapon_drop_id         = dropped;
-                        g_state->weapon_drop_for        = req.entity_id;
-                        g_state->weapon_drop_turns_left = 0;
-                        snprintf(msg, LOG_LEN,
-                            "[DROP] %s dropped \xe2\x80\x94 [%s] press P to pick up!",
-                            WEAPON_TABLE[dropped].name, actor.name);
-                        g_state->log.push(msg);
-                    }
-                }
+                maybe_start_weapon_drop(req.entity_id, req.target_id);
 
                 if (g_state->total_enemies_killed >= WIN_KILL_COUNT) {
                     g_state->phase = PHASE_WIN;
@@ -544,6 +601,11 @@ static void apply_action(ActionRequest& req) {
                         artifact_release(req.entity_id, req.weapon);
                     actor.stamina = 0; return;
                 }
+            } else if (tgt.type == ENT_PLAYER && check_game_over()) {
+                if (WEAPON_TABLE[req.weapon].is_artifact)
+                    artifact_release(req.entity_id, req.weapon);
+                actor.stamina = 0;
+                return;
             }
         }
         if (WEAPON_TABLE[req.weapon].is_artifact)
@@ -634,6 +696,7 @@ static void apply_action(ActionRequest& req) {
                 snprintf(msg, LOG_LEN, "  * [%s] VAPORIZED!", e.name);
                 g_state->log.push(msg);
                 artifact_release_all(MAX_PLAYERS + i);
+                maybe_start_weapon_drop(req.entity_id, MAX_PLAYERS + i);
                 if (g_state->total_enemies_killed >= WIN_KILL_COUNT) {
                     g_state->phase = PHASE_WIN;
                     artifact_release(req.entity_id, WPN_SOLAR_CORE);
@@ -722,6 +785,7 @@ static void apply_action(ActionRequest& req) {
                     g_state->log.push(msg);
                     ++g_state->total_enemies_killed;
                     artifact_release_all(MAX_PLAYERS + i);
+                    maybe_start_weapon_drop(req.entity_id, MAX_PLAYERS + i);
                     if (g_state->total_enemies_killed >= WIN_KILL_COUNT) {
                         g_state->phase = PHASE_WIN;
                         actor.stamina = 0;
@@ -738,7 +802,7 @@ static void apply_action(ActionRequest& req) {
     }
 
     case ACT_QUIT:
-        g_state->phase = PHASE_QUIT;
+        g_state->log.push("[Arbiter] Quit action received; waiting for HIP SIGTERM.");
         break;
 
     default: break;
@@ -910,6 +974,10 @@ struct RenderSnapshot {
     int  artifact_held_by[NUM_ARTIFACTS];
     char log_lines[LOG_LINES][LOG_LEN];
     int  log_head;
+    // Smooth stamina interpolation
+    double action_walltime;
+    float  base_stamina[MAX_ENTITIES];
+    bool   interp_valid;
     // Weapon drop state (rendered from snapshot to avoid extra locking)
     bool     drop_pending;
     WeaponID drop_id;
@@ -938,9 +1006,14 @@ static void take_snapshot(RenderSnapshot& snap) {
         snap.artifact_held_by[a] = g_state->resource_table.entries[a].held_by;
     }
     pthread_mutex_unlock(&g_state->resource_table.table_mutex);
+    pthread_mutex_lock(&g_state->log.log_mutex);
     memcpy(snap.log_lines, g_state->log.lines, sizeof(snap.log_lines));
     snap.log_head = g_state->log.head;
+    pthread_mutex_unlock(&g_state->log.log_mutex);
     snap.player_party_inventory = g_state->player_party_inventory;
+    snap.action_walltime = g_action_walltime;
+    memcpy(snap.base_stamina, g_base_stamina, sizeof(snap.base_stamina));
+    snap.interp_valid = g_interp_valid;
 }
 
 static void dump_action_log_to_file(const RenderSnapshot& snap) {
@@ -1131,7 +1204,14 @@ static void* render_thread(void*) {
                     case 'h': req.action = ACT_HEAL;     got = true; break;
                     case ' ':
                     case 'k': req.action = ACT_SKIP;     got = true; break;
-                    case 'q': req.action = ACT_QUIT;     got = true; break;
+                    case 'q':
+                        if (!g_state->quit_requested) {
+                            g_state->quit_requested = true;
+                            g_state->quit_requested_by = active;
+                            g_state->log.push("[UI] Q pressed - HIP will send SIGTERM to Arbiter.");
+                        }
+                        pthread_cond_broadcast(&g_state->turn_cond);
+                        break;
                     case 'u': req.action = ACT_ULTIMATE; got = true; break;
                     case 't': {
                         // Cycle through enemies (no action submitted)
@@ -1529,6 +1609,24 @@ static void* render_thread(void*) {
         constexpr double HIT_FLASH_SEC = 0.9;
         double now_w = wallclock_sec();
 
+        // Smooth stamina interpolation helper — computes what each
+        // entity's stamina "should be" based on wall-clock elapsed
+        // time since the last action, giving a smooth fill animation.
+        auto interp_stamina = [&](int eid, const Entity& ent) -> float {
+            if (!snap.interp_valid || ent.stunned)
+                return ent.stamina;
+            // During ultimate pause, freeze enemy stamina display
+            if (snap.phase == PHASE_ULTIMATE_PAUSE && eid >= MAX_PLAYERS)
+                return snap.base_stamina[eid];
+            double elapsed = now_w - snap.action_walltime;
+            if (elapsed < 0.0 || elapsed > 30.0)
+                return ent.stamina;
+            float s = snap.base_stamina[eid] + ent.speed * (float)elapsed;
+            if (s > ent.max_stamina) s = ent.max_stamina;
+            if (s < 0.0f) s = 0.0f;
+            return s;
+        };
+
         int total = np + ne;
         for (int i = 0; i < total; ++i) {
             int idx = (i < np) ? i : MAX_PLAYERS + (i - np);
@@ -1687,16 +1785,17 @@ static void* render_thread(void*) {
                 ++lr;
             }
             if (lr < rows - LOG_H - 1) {
+                float dsp = interp_stamina(i, e);
                 mvprintw(lr, 1, " SP ");
                 int sp_pair = e.stunned ? CP_STUN : CP_SP_BAR;
-                draw_bar_w(lr, 4, e.stamina, e.max_stamina, 14, sp_pair, CP_BORDER);
+                draw_bar_w(lr, 4, dsp, e.max_stamina, 14, sp_pair, CP_BORDER);
                 if (e.stunned) {
                     attron(COLOR_PAIR(CP_STUN) | A_BLINK | A_BOLD);
-                    mvprintw(lr, 19, "S%2.0f", e.stamina);
+                    mvprintw(lr, 19, "S%3.0f", dsp);
                     attroff(COLOR_PAIR(CP_STUN) | A_BLINK | A_BOLD);
                 } else {
                     attron(COLOR_PAIR(CP_SP_BAR));
-                    mvprintw(lr, 19, "%3.0f/%-3.0f", e.stamina, e.max_stamina);
+                    mvprintw(lr, 19, "%3.0f", dsp);
                     attroff(COLOR_PAIR(CP_SP_BAR));
                 }
                 ++lr;
@@ -1832,15 +1931,16 @@ static void* render_thread(void*) {
                 ++rr;
             }
             if (rr < rows - LOG_H - 1) {
+                float dsp = interp_stamina(e.id, e);
                 mvprintw(rr, rpx, " SP");
-                draw_bar_w(rr, rpx + 3, e.stamina, e.max_stamina, 14, CP_SP_BAR, CP_BORDER);
+                draw_bar_w(rr, rpx + 3, dsp, e.max_stamina, 14, CP_SP_BAR, CP_BORDER);
                 if (e.stunned) {
                     attron(COLOR_PAIR(CP_STUN) | A_BOLD | A_BLINK);
-                    mvprintw(rr, rpx + 15, "S%2.0f/%-2.0f", e.stamina, e.max_stamina);
+                    mvprintw(rr, rpx + 18, "S%3.0f", dsp);
                     attroff(COLOR_PAIR(CP_STUN) | A_BOLD | A_BLINK);
                 } else {
                     attron(COLOR_PAIR(CP_SP_BAR));
-                    mvprintw(rr, rpx + 15, "%3.0f/%-3.0f", e.stamina, e.max_stamina);
+                    mvprintw(rr, rpx + 18, "%3.0f", dsp);
                     attroff(COLOR_PAIR(CP_SP_BAR));
                 }
                 ++rr;
@@ -2225,8 +2325,6 @@ static void lobby_screen(int &out_players, int &out_roll, int &out_level) {
 // ─────────────────────────────────────────────
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
-    srand((unsigned)time(nullptr));
-
     signal(SIGTERM, handle_sigterm);
     signal(SIGALRM, handle_sigalrm);
     signal(SIGCHLD, handle_sigchld);
@@ -2241,6 +2339,8 @@ int main(int argc, char* argv[]) {
     if (num_players > MAX_PLAYERS) num_players = MAX_PLAYERS;
     g_state->num_players = num_players;
     g_state->game_level  = level;
+    g_state->roll_no     = roll_no;
+    srand((unsigned)roll_no);
 
     // First wave: just a small group; the wave system replenishes the
     // field after each action until WIN_KILL_COUNT enemies are dead.
@@ -2295,6 +2395,13 @@ int main(int argc, char* argv[]) {
 
     g_state->phase = PHASE_RUNNING;
     g_state->use_ncurses_ui = true;
+    {
+        char msg[LOG_LEN];
+        snprintf(msg, LOG_LEN,
+                 "[Arbiter] Roll number %d seeded RNG and stat formulas.",
+                 roll_no);
+        g_state->log.push(msg);
+    }
 
     printf("[Arbiter] %d players, %d enemies. Level %d. Roll %d\n",
            num_players, num_enemies, level, roll_no);
@@ -2407,6 +2514,13 @@ int main(int argc, char* argv[]) {
 
         pthread_mutex_lock(&g_state->global_mutex);
         apply_action(req);
+        // Record base stamina for smooth render interpolation.
+        // The render thread will use these + elapsed wall-clock time
+        // to compute a smoothly filling bar instead of discrete jumps.
+        g_action_walltime = wallclock_sec();
+        for (int ii = 0; ii < MAX_ENTITIES; ++ii)
+            g_base_stamina[ii] = g_state->entities[ii].stamina;
+        g_interp_valid = true;
         // After each action, replenish enemy waves if room/budget remains.
         maybe_spawn_wave();
         check_game_over();
@@ -2414,6 +2528,11 @@ int main(int argc, char* argv[]) {
         g_state->npc_turn_deadline_sec = 0.0;
         pthread_cond_broadcast(&g_state->turn_cond);
         pthread_mutex_unlock(&g_state->global_mutex);
+
+        // Give the render thread (80ms frame budget) a guaranteed window to
+        // snapshot the post-action stamina value before scheduler_next()
+        // advances it again.  This is especially visible after ACT_SKIP,
+        // where stamina drops to 50% and must be shown on the bar.
     }
 
 done:

@@ -1,241 +1,534 @@
 CHRONO RIFT ACTION LOG DUMP
-Generated: Fri May  8 15:45:15 2026
-Entries: 237
+Generated: Sat May  9 09:46:00 2026
+Entries: 530
 ----------------------------------------
+[Arbiter] Roll number 1234 seeded RNG and stat formulas.
 >> [Hero-2]'s turn (t=1.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (93/107)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (125/139)
   >> [Enemy-1] knocked to (27,3)
 >> [Hero-1]'s turn (t=2.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (79/107)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (111/139)
   >> [Enemy-1] knocked to (28,2)
 >> [Hero-2]'s turn (t=3.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (65/107)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (97/139)
   >> [Enemy-1] resisted knockback at edge
 >> [Hero-1]'s turn (t=4.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (51/107)
-  >> [Enemy-1] resisted knockback at edge
+[Hero-1] EXHAUST -> [Enemy-1] stamina -14
 >> [Hero-2]'s turn (t=5.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (37/107)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (83/139)
   >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=5.47)
+[Enemy-1] STRIKE -> [Hero-2] -13 HP (1664/1677)
+  >> [Hero-2] knocked to (20,24)
+>> [Enemy-2]'s turn (t=5.56)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1651/1677)
+  >> [Hero-2] knocked to (19,25)
 >> [Hero-1]'s turn (t=6.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (23/107)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (69/139)
   >> [Enemy-1] resisted knockback at edge
 >> [Hero-2]'s turn (t=7.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (9/107)
-  >> [Enemy-1] resisted knockback at edge
->> [Enemy-1]'s turn (t=7.14)
-[Enemy-1] SKIP (stamina -> 50%)
+[Hero-2] EXHAUST -> [Enemy-1] stamina -14
 >> [Hero-1]'s turn (t=8.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/107)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (55/139)
   >> [Enemy-1] resisted knockback at edge
-[Enemy-1] DEFEATED!
-*** WAVE 2 INCOMING — 1 killed / 10 to go ***
 >> [Hero-2]'s turn (t=9.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (85/99)
-  >> [Enemy-1] knocked to (27,3)
+[Hero-2] EXHAUST -> [Enemy-1] stamina -14
 >> [Hero-1]'s turn (t=10.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (71/99)
-  >> [Enemy-1] knocked to (28,2)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (41/139)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-2]'s turn (t=11.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (57/99)
-  >> [Enemy-1] resisted knockback at edge
+[Hero-2] EXHAUST -> [Enemy-1] stamina -14
+>> [Enemy-2]'s turn (t=11.11)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1638/1677)
+  >> [Hero-2] knocked to (18,26)
+>> [Enemy-1]'s turn (t=11.87)
+[Enemy-1] STRIKE -> [Hero-2] -13 HP (1625/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-1]'s turn (t=12.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (43/99)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (27/139)
   >> [Enemy-1] resisted knockback at edge
->> [Enemy-3]'s turn (t=12.50)
-[Enemy-3] SKIP (stamina -> 50%)
 >> [Hero-2]'s turn (t=13.00)
-[Hero-2] STRIKE -> [Enemy-2] -14 HP (210/224)
-  >> [Enemy-2] knocked to (47,3)
+[Hero-2] EXHAUST -> [Enemy-1] stamina -14
+>> [Enemy-3]'s turn (t=13.64)
+[Enemy-3] STRIKE -> [Hero-2] -13 HP (1612/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-1]'s turn (t=14.00)
-[Hero-1] STRIKE -> [Enemy-2] -14 HP (196/224)
-  >> [Enemy-2] knocked to (48,2)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (13/139)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-2]'s turn (t=15.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (29/99)
-  >> [Enemy-1] resisted knockback at edge
->> [Enemy-2]'s turn (t=15.00)
-[Enemy-2] STRIKE -> [Hero-1] -13 HP (1509/1522)
-  >> [Hero-1] knocked to (7,24)
+[Hero-2] EXHAUST -> [Enemy-1] stamina -14
 >> [Hero-1]'s turn (t=16.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (15/99)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/139)
   >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Thunderstaff dropped from Enemy-1 - [Hero-1] press P on next turn!
+*** WAVE 2 INCOMING — 1 killed / 10 to go ***
+>> [Enemy-2]'s turn (t=16.67)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1599/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-2]'s turn (t=17.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (1/99)
-  >> [Enemy-1] resisted knockback at edge
+[Hero-2] EXHAUST -> [Enemy-1] stamina -14
 >> [Hero-1]'s turn (t=18.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/99)
-  >> [Enemy-1] resisted knockback at edge
-[Enemy-1] DEFEATED!
-*** WAVE 3 INCOMING — 2 killed / 10 to go ***
->> [Enemy-3]'s turn (t=18.75)
-[Enemy-3] STRIKE -> [Hero-1] -13 HP (1496/1522)
-  >> [Hero-1] knocked to (6,25)
+[Hero-1] ignored Thunderstaff -> enemy picks it up.
+[Enemy-1] picked up dropped Thunderstaff.
+[Hero-1] AOE BLAST (r=20) — 0 hits
 >> [Hero-2]'s turn (t=19.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (143/157)
-  >> [Enemy-1] knocked to (27,3)
+[Hero-2] AOE BLAST (r=20) — 0 hits
 >> [Hero-1]'s turn (t=20.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (129/157)
-  >> [Enemy-1] knocked to (28,2)
+[Hero-1] AOE BLAST (r=20) — 0 hits
 >> [Hero-2]'s turn (t=21.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (115/157)
-  >> [Enemy-1] resisted knockback at edge
+[Hero-2] AOE BLAST (r=20) — 0 hits
 >> [Hero-1]'s turn (t=22.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (101/157)
-  >> [Enemy-1] resisted knockback at edge
+[Hero-1] AOE BLAST (r=20) — 0 hits
+>> [Enemy-2]'s turn (t=22.22)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1586/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-2]'s turn (t=23.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (87/157)
-  >> [Enemy-1] resisted knockback at edge
+[Hero-2] AOE BLAST (r=20) — 0 hits
 >> [Hero-1]'s turn (t=24.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (73/157)
-  >> [Enemy-1] resisted knockback at edge
+[Hero-1] AOE BLAST (r=20) — 0 hits
 >> [Hero-2]'s turn (t=25.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (59/157)
-  >> [Enemy-1] resisted knockback at edge
+[Hero-2] AOE BLAST (r=20) — 0 hits
 >> [Hero-1]'s turn (t=26.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (45/157)
-  >> [Enemy-1] resisted knockback at edge
->> [Enemy-1]'s turn (t=26.33)
-[Enemy-1] STRIKE -> [Hero-1] -12 HP (1484/1522)
-  >> [Hero-1] knocked to (5,26)
+[Hero-1] AOE BLAST (r=20) — 0 hits
+>> [Enemy-1]'s turn (t=26.93)
+[Enemy-1] STRIKE -> [Hero-2] -13 HP (1573/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-2]'s turn (t=27.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (31/157)
-  >> [Enemy-1] resisted knockback at edge
->> [Hero-1]'s turn (t=28.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (17/157)
-  >> [Enemy-1] resisted knockback at edge
->> [Hero-2]'s turn (t=29.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (3/157)
-  >> [Enemy-1] resisted knockback at edge
->> [Enemy-2]'s turn (t=30.00)
-[Enemy-2] SKIP (stamina -> 50%)
->> [Hero-1]'s turn (t=30.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/157)
-  >> [Enemy-1] resisted knockback at edge
-[Enemy-1] DEFEATED!
-*** WAVE 4 INCOMING — 3 killed / 10 to go ***
->> [Hero-2]'s turn (t=31.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (126/140)
-  >> [Enemy-1] knocked to (27,3)
->> [Enemy-3]'s turn (t=31.25)
+[Hero-2] AOE BLAST (r=20) — 0 hits
+>> [Enemy-3]'s turn (t=27.27)
 [Enemy-3] SKIP (stamina -> 50%)
-[World] *** Eclipse Relic appeared! ***
->> [Hero-1]'s turn (t=32.00)
-[Hero-1] acquired Eclipse Relic
-[Hero-1] picked up Eclipse Relic!
->> [Hero-2]'s turn (t=33.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (112/140)
-  >> [Enemy-1] knocked to (28,2)
->> [Hero-1]'s turn (t=34.00)
-[Hero-1] STRIKE -> [Enemy-1] -14 HP (98/140)
+>> [Enemy-2]'s turn (t=27.78)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1560/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=28.00)
+[Hero-1] AOE BLAST (r=20) — 0 hits
+>> [Hero-2]'s turn (t=29.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (144/158)
+  >> [Enemy-1] knocked to (25,3)
+>> [Hero-1]'s turn (t=30.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (130/158)
+  >> [Enemy-1] knocked to (26,2)
+>> [Hero-2]'s turn (t=31.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (116/158)
   >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=32.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (102/158)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=33.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (88/158)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=33.33)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1547/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=34.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (74/158)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=34.09)
+[Enemy-3] SKIP (stamina -> 50%)
 >> [Hero-2]'s turn (t=35.00)
-[Hero-2] STRIKE -> [Enemy-1] -14 HP (84/140)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (60/158)
   >> [Enemy-1] resisted knockback at edge
 >> [Hero-1]'s turn (t=36.00)
-[Hero-1] waiting for Eclipse Relic (held by [Hero-1])
-[Hero-1] can't acquire Eclipse Relic — blocked!
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (46/158)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=36.93)
+[Enemy-1] STRIKE -> [Hero-2] -13 HP (1534/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-2]'s turn (t=37.00)
-[Arbiter] DEADLOCK -> forced [Hero-1] release Eclipse Relic
-[Hero-2] acquired Eclipse Relic
-[Hero-2] USE Eclipse Relic -> [Enemy-1] -70 HP (14/140)
-[Hero-2] released Eclipse Relic
->> [Enemy-2]'s turn (t=37.50)
-[Enemy-2] STRIKE -> [Hero-1] -13 HP (1471/1522)
-  >> [Hero-1] resisted knockback at edge
->> [Enemy-3]'s turn (t=37.50)
-[Enemy-3] STRIKE -> [Hero-1] -13 HP (1458/1522)
-  >> [Hero-1] resisted knockback at edge
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (32/158)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-1]'s turn (t=38.00)
-[Hero-1] acquired Eclipse Relic
-[Hero-1] USE Eclipse Relic -> [Enemy-1] -70 HP (0/140)
-[Enemy-1] STUNNED for 3s!
-[Enemy-1] DEFEATED!
-[Hero-1] released Eclipse Relic
-*** WAVE 5 INCOMING — 4 killed / 10 to go ***
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (18/158)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=38.89)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1521/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-2]'s turn (t=39.00)
-[Hero-2] acquired Eclipse Relic
-[Hero-2] USE Eclipse Relic -> [Enemy-1] -70 HP (115/185)
-[Hero-2] released Eclipse Relic
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (4/158)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-1]'s turn (t=40.00)
-[Hero-1] acquired Eclipse Relic
-[Hero-1] USE Eclipse Relic -> [Enemy-1] -70 HP (45/185)
-[Enemy-1] STUNNED for 3s!
-[Hero-1] released Eclipse Relic
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/158)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Enemy-1 died holding a weapon; NPC-held weapons do not drop.
+*** WAVE 3 INCOMING — 2 killed / 10 to go ***
+>> [Enemy-3]'s turn (t=40.91)
+[Enemy-3] STRIKE -> [Hero-2] -13 HP (1508/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-2]'s turn (t=41.00)
-[Hero-2] acquired Eclipse Relic
-[Hero-2] USE Eclipse Relic -> [Enemy-1] -70 HP (0/185)
-[Enemy-1] STUNNED for 3s!
-[Enemy-1] DEFEATED!
-[DROP] Frostbow dropped — [Hero-2] press P to pick up!
-[Hero-2] released Eclipse Relic
-*** WAVE 6 INCOMING — 5 killed / 10 to go ***
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (213/227)
+  >> [Enemy-1] knocked to (25,3)
 >> [Hero-1]'s turn (t=42.00)
-[Hero-1] acquired Eclipse Relic
-[Hero-1] USE Eclipse Relic -> [Enemy-1] -70 HP (78/148)
-[Hero-1] released Eclipse Relic
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (199/227)
+  >> [Enemy-1] knocked to (26,2)
 >> [Hero-2]'s turn (t=43.00)
-[Hero-2] picked up Frostbow!
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (185/227)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-1]'s turn (t=44.00)
-[Hero-1] acquired Eclipse Relic
-[Hero-1] USE Eclipse Relic -> [Enemy-1] -70 HP (8/148)
-[Hero-1] released Eclipse Relic
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (171/227)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=44.44)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1495/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-2]'s turn (t=45.00)
-[Hero-2] USE Frostbow -> [Enemy-1] -48 HP (0/148)
-[Enemy-1] STUNNED for 3s!
-[Enemy-1] DEFEATED!
-*** WAVE 7 INCOMING — 6 killed / 10 to go ***
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (157/227)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-1]'s turn (t=46.00)
-[Hero-1] USE Frostbow -> [Enemy-1] -48 HP (174/222)
-[Enemy-1] STUNNED for 3s!
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (143/227)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-2]'s turn (t=47.00)
-[Hero-2] USE Frostbow -> [Enemy-1] -48 HP (126/222)
-[Enemy-1] STUNNED for 3s!
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (129/227)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-1]'s turn (t=48.00)
-[Hero-1] USE Frostbow -> [Enemy-1] -48 HP (78/222)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (115/227)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-2]'s turn (t=49.00)
-[Hero-2] USE Frostbow -> [Enemy-1] -48 HP (30/222)
->> [Enemy-3]'s turn (t=50.00)
-[Enemy-3] STRIKE -> [Hero-1] -13 HP (1445/1522)
-  >> [Hero-1] resisted knockback at edge
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (101/227)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-1]'s turn (t=50.00)
-[Hero-1] USE Frostbow -> [Enemy-1] -48 HP (0/222)
-[Enemy-1] DEFEATED!
-*** WAVE 8 INCOMING — 7 killed / 10 to go ***
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (87/227)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=50.00)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1482/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-2]'s turn (t=51.00)
-[Hero-2] USE Frostbow -> [Enemy-1] -48 HP (203/251)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (73/227)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-1]'s turn (t=52.00)
-[Hero-1] USE Frostbow -> [Enemy-1] -48 HP (155/251)
-[Enemy-1] STUNNED for 3s!
->> [Enemy-2]'s turn (t=52.50)
-[Enemy-2] STRIKE -> [Hero-1] -13 HP (1432/1522)
-  >> [Hero-1] resisted knockback at edge
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (59/227)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-2]'s turn (t=53.00)
-[Hero-2] USE Frostbow -> [Enemy-1] -48 HP (107/251)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (45/227)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=53.64)
+[Enemy-1] SKIP (stamina -> 50%)
 >> [Hero-1]'s turn (t=54.00)
-[Hero-1] USE Frostbow -> [Enemy-1] -48 HP (59/251)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (31/227)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=54.55)
+[Enemy-3] STRIKE -> [Hero-2] -13 HP (1469/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-2]'s turn (t=55.00)
-[Hero-2] USE Frostbow -> [Enemy-1] -48 HP (11/251)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (17/227)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=55.56)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1456/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-1]'s turn (t=56.00)
-[Hero-1] USE Frostbow -> [Enemy-1] -48 HP (0/251)
-[Enemy-1] STUNNED for 3s!
-[Enemy-1] DEFEATED!
-[DROP] Obsidian Axe dropped — [Hero-1] press P to pick up!
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (3/227)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-2]'s turn (t=57.00)
-[Hero-2] USE Frostbow -> [Enemy-2] -48 HP (148/224)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (0/227)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Enemy-1 dropped nothing.
+*** WAVE 4 INCOMING — 3 killed / 10 to go ***
 >> [Hero-1]'s turn (t=58.00)
-[Enemy-1] recovered from stun.
-[Hero-1] picked up Obsidian Axe!
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (126/140)
+  >> [Enemy-1] knocked to (27,3)
 >> [Hero-2]'s turn (t=59.00)
-[Hero-2] USE Obsidian Axe -> [Enemy-2] -45 HP (103/224)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (112/140)
+  >> [Enemy-1] knocked to (26,2)
 >> [Hero-1]'s turn (t=60.00)
-[Hero-1] USE Obsidian Axe -> [Enemy-2] -45 HP (58/224)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (98/140)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-2]'s turn (t=61.00)
-[Hero-2] USE Obsidian Axe -> [Enemy-2] -45 HP (13/224)
-[Enemy-2] STUNNED for 3s!
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (84/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=61.11)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1443/1677)
+  >> [Hero-2] resisted knockback at edge
 >> [Hero-1]'s turn (t=62.00)
-[Hero-1] USE Obsidian Axe -> [Enemy-2] -45 HP (0/224)
-[Enemy-2] DEFEATED!
->> [Enemy-3]'s turn (t=62.50)
-[Enemy-3] SKIP (stamina -> 50%)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (70/140)
+  >> [Enemy-1] resisted knockback at edge
 >> [Hero-2]'s turn (t=63.00)
-[Enemy-2] recovered from stun.
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (56/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=63.00)
+[Enemy-1] STRIKE -> [Hero-2] -13 HP (1430/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=64.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (42/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=65.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (28/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=66.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (14/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=66.67)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1417/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-2]'s turn (t=67.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (0/140)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Enemy-1 dropped nothing.
+*** WAVE 5 INCOMING — 4 killed / 10 to go ***
+>> [Hero-1]'s turn (t=68.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (111/125)
+  >> [Enemy-1] knocked to (27,3)
+>> [Enemy-3]'s turn (t=68.18)
+[World] *** Eclipse Relic appeared! ***
+[Enemy-3] STRIKE -> [Hero-2] -13 HP (1404/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-2]'s turn (t=69.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (97/125)
+  >> [Enemy-1] knocked to (26,2)
+>> [Hero-1]'s turn (t=70.00)
+[Hero-1] ignored Eclipse Relic -> enemy picks it up.
+[Enemy-1] acquired Eclipse Relic
+[Enemy-1] claimed unpicked artifact Eclipse Relic.
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (83/125)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=71.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (69/125)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=72.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (55/125)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=72.22)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1391/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-2]'s turn (t=73.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (41/125)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=73.52)
+[Enemy-1] STRIKE -> [Hero-2] -13 HP (1378/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=74.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (27/125)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=75.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (13/125)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=76.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/125)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Enemy-1 died holding a weapon; NPC-held weapons do not drop.
+*** WAVE 6 INCOMING — 5 killed / 10 to go ***
+>> [Hero-2]'s turn (t=77.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (168/182)
+  >> [Enemy-1] knocked to (25,3)
+>> [Enemy-2]'s turn (t=77.78)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1365/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=78.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (154/182)
+  >> [Enemy-1] knocked to (26,2)
+>> [Hero-2]'s turn (t=79.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (140/182)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=80.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (126/182)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=81.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (112/182)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=81.82)
+[Enemy-3] STRIKE -> [Hero-2] -13 HP (1352/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=82.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (98/182)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=83.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (84/182)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=83.33)
+[Enemy-2] SKIP (stamina -> 50%)
+>> [Hero-1]'s turn (t=84.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (70/182)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=85.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (56/182)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=86.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (42/182)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=86.11)
+[Enemy-2] SKIP (stamina -> 50%)
+>> [Hero-2]'s turn (t=87.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (28/182)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=87.54)
+[Enemy-1] STRIKE -> [Hero-2] -13 HP (1339/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=88.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (14/182)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=88.89)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1326/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-2]'s turn (t=89.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (0/182)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Enemy-1 dropped nothing.
+*** WAVE 7 INCOMING — 6 killed / 10 to go ***
+>> [Hero-1]'s turn (t=90.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (211/225)
+  >> [Enemy-1] knocked to (27,3)
+>> [Hero-2]'s turn (t=91.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (197/225)
+  >> [Enemy-1] knocked to (26,2)
+>> [Hero-1]'s turn (t=92.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (183/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=93.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (169/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=94.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (155/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=94.44)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1313/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-2]'s turn (t=95.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (141/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=95.45)
+[Enemy-3] SKIP (stamina -> 50%)
+>> [Hero-1]'s turn (t=96.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (127/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=97.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (113/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=98.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (99/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=99.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (85/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=100.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (71/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=100.00)
+[Enemy-2] SKIP (stamina -> 50%)
+>> [Hero-2]'s turn (t=101.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (57/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=102.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (43/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=102.27)
+[Enemy-3] SKIP (stamina -> 50%)
+>> [Enemy-2]'s turn (t=102.78)
+[Enemy-2] SKIP (stamina -> 50%)
+>> [Hero-2]'s turn (t=103.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (29/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=104.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (15/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=104.00)
+[Enemy-1] STRIKE -> [Hero-2] -13 HP (1300/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-2]'s turn (t=105.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (1/225)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=105.56)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1287/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=106.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/225)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Enemy-1 dropped nothing.
+*** WAVE 8 INCOMING — 7 killed / 10 to go ***
+>> [Hero-2]'s turn (t=107.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (126/140)
+  >> [Enemy-1] knocked to (25,3)
+>> [Hero-1]'s turn (t=108.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (112/140)
+  >> [Enemy-1] knocked to (26,2)
+>> [Hero-2]'s turn (t=109.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (98/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-3]'s turn (t=109.09)
+[Enemy-3] STRIKE -> [Hero-2] -13 HP (1274/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=110.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (84/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=111.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (70/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-2]'s turn (t=111.11)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1261/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=112.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (56/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=113.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (42/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Enemy-1]'s turn (t=113.50)
+[Enemy-1] STRIKE -> [Hero-2] -13 HP (1248/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=114.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (28/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-2]'s turn (t=115.00)
+[Hero-2] STRIKE -> [Enemy-1] -14 HP (14/140)
+  >> [Enemy-1] resisted knockback at edge
+>> [Hero-1]'s turn (t=116.00)
+[Hero-1] STRIKE -> [Enemy-1] -14 HP (0/140)
+  >> [Enemy-1] resisted knockback at edge
+[Enemy-1] DEFEATED!
+[DROP] Frostbow dropped from Enemy-1 - [Hero-1] press P on next turn!
+>> [Enemy-2]'s turn (t=116.67)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1235/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-2]'s turn (t=117.00)
+[Hero-2] STRIKE -> [Enemy-2] -14 HP (143/157)
+  >> [Enemy-2] knocked to (47,3)
+>> [Hero-1]'s turn (t=118.00)
+[Hero-1] ignored Frostbow -> enemy picks it up.
+[Enemy-2] picked up dropped Frostbow.
+[Hero-1] STRIKE -> [Enemy-2] -14 HP (129/157)
+  >> [Enemy-2] knocked to (48,2)
+>> [Hero-2]'s turn (t=119.00)
+[Hero-2] STRIKE -> [Enemy-2] -14 HP (115/157)
+  >> [Enemy-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=120.00)
+[Hero-1] STRIKE -> [Enemy-2] -14 HP (101/157)
+  >> [Enemy-2] resisted knockback at edge
+>> [Hero-2]'s turn (t=121.00)
+[Hero-2] STRIKE -> [Enemy-2] -14 HP (87/157)
+  >> [Enemy-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=122.00)
+[Hero-1] STRIKE -> [Enemy-2] -14 HP (73/157)
+  >> [Enemy-2] resisted knockback at edge
+>> [Enemy-2]'s turn (t=122.22)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1222/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Enemy-3]'s turn (t=122.73)
+[Enemy-3] STRIKE -> [Hero-2] -13 HP (1209/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-2]'s turn (t=123.00)
+[Hero-2] STRIKE -> [Enemy-2] -14 HP (59/157)
+  >> [Enemy-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=124.00)
+[Hero-1] STRIKE -> [Enemy-2] -14 HP (45/157)
+  >> [Enemy-2] resisted knockback at edge
+>> [Hero-2]'s turn (t=125.00)
+[Hero-2] STRIKE -> [Enemy-2] -14 HP (31/157)
+  >> [Enemy-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=126.00)
+[Hero-1] STRIKE -> [Enemy-2] -14 HP (17/157)
+  >> [Enemy-2] resisted knockback at edge
+>> [Hero-2]'s turn (t=127.00)
+[Hero-2] STRIKE -> [Enemy-2] -14 HP (3/157)
+  >> [Enemy-2] resisted knockback at edge
+>> [Enemy-2]'s turn (t=127.78)
+[Enemy-2] STRIKE -> [Hero-2] -13 HP (1196/1677)
+  >> [Hero-2] resisted knockback at edge
+>> [Hero-1]'s turn (t=128.00)
+[Hero-1] STRIKE -> [Enemy-2] -14 HP (0/157)
+  >> [Enemy-2] resisted knockback at edge
+[Enemy-2] DEFEATED!
+[DROP] Enemy-2 died holding a weapon; NPC-held weapons do not drop.
+>> [Hero-2]'s turn (t=129.00)

@@ -111,11 +111,19 @@ inline bool allocator_swap_in(Inventory& inv, WeaponID id) {
                WEAPON_TABLE[id].name);
         return false;
     }
+
+    // Treat swap-in as a transaction: if primary allocation fails after
+    // evictions, restore the original inventory and LT storage.
+    Inventory backup = inv;
+
     // Remove from LT storage
     for (int i = lt_idx; i < inv.lt_count - 1; ++i)
         inv.lt_storage[i] = inv.lt_storage[i + 1];
     --inv.lt_count;
 
     // Add to primary (same eviction rules apply)
-    return allocator_add(inv, id);
+    if (allocator_add(inv, id)) return true;
+
+    inv = backup;
+    return false;
 }

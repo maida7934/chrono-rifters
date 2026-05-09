@@ -342,6 +342,7 @@ struct SharedState {
     bool      eclipse_relic_spawned;
     bool      ultimate_active;
     int       game_level;   // chosen difficulty / level
+    int       roll_no;      // roll number entered in lobby; seeds gameplay RNG
 
     // ── NPC timeout flag (Arbiter sets, ASP reads) ──
     std::atomic<bool> npc_timeout;
@@ -351,7 +352,9 @@ struct SharedState {
     bool      weapon_drop_pending;   // true when a weapon is available
     WeaponID  weapon_drop_id;        // which weapon was dropped
     int       weapon_drop_for;       // entity index of player to prompt
-    int       weapon_drop_turns_left; // turns remaining before enemy auto-pickup fallback
+    int       weapon_drop_turns_left; // legacy UI state; offers resolve on next action
+    bool      quit_requested;        // ncurses UI asks HIP to send SIGTERM
+    int       quit_requested_by;     // player index that pressed Q
         // If true, HIP should not prompt on the terminal and Arbiter's
         // ncurses render_thread will capture input instead.
         bool      use_ncurses_ui;
@@ -383,12 +386,15 @@ struct SharedState {
         eclipse_relic_spawned = false;
         ultimate_active       = false;
         game_level = 1;
+        roll_no = 0;
         npc_timeout.store(false);
         npc_turn_deadline_sec = 0.0;
         weapon_drop_pending   = false;
         weapon_drop_id        = WPN_NONE;
         weapon_drop_for       = -1;
         weapon_drop_turns_left = 0;
+        quit_requested        = false;
+        quit_requested_by     = -1;
         use_ncurses_ui        = false;
 
         player_party_inventory.init();

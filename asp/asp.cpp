@@ -39,36 +39,10 @@ static int ai_pick_target(SharedState* s) {
 }
 
 static void maybe_drop_weapon(SharedState* s, int slot) {
-    // Spec: NPC weapons are NOT dropped on death
-    pthread_mutex_lock(&s->global_mutex);
-    bool held = false;
-    for (int i = 0; i < INVENTORY_SLOTS; ++i)
-        if (s->entities[slot].inventory.slots[i] != WPN_NONE) { held = true; break; }
-    pthread_mutex_unlock(&s->global_mutex);
-    if (held) return;
-
-    if ((rand() % 100) >= 30) return;
-
-    WeaponID drops[] = { WPN_IRON_HALBERD, WPN_VENOM_DAGGER,
-                         WPN_THUNDERSTAFF, WPN_OBSIDIAN_AXE,
-                         WPN_FROSTBOW,     WPN_SPLINTER_STICK };
-    WeaponID dropped = drops[rand() % 6];
-
-    char msg[LOG_LEN];
-    snprintf(msg, LOG_LEN, "[%s] dropped %s!", s->entities[slot].name, WEAPON_TABLE[dropped].name);
-    s->log.push(msg);
-
-    pthread_mutex_lock(&s->global_mutex);
-    int offer = -1;
-    for (int i = 0; i < s->num_players; ++i)
-        if (s->entities[i].alive) { offer = i; break; }
-    if (offer >= 0) {
-        s->weapon_drop_pending = true;
-        s->weapon_drop_id      = dropped;
-        s->weapon_drop_for     = offer;
-        s->weapon_drop_turns_left = 1;
-    }
-    pthread_mutex_unlock(&s->global_mutex);
+    (void)s;
+    (void)slot;
+    // Arbiter owns weapon-drop resolution because it knows which player
+    // made the kill and can keep the player-choice offer deterministic.
 }
 
 static void maybe_spawn_eclipse(SharedState* s) {
@@ -89,7 +63,7 @@ static void maybe_spawn_eclipse(SharedState* s) {
             s->weapon_drop_pending = true;
             s->weapon_drop_id      = WPN_ECLIPSE_RELIC;
             s->weapon_drop_for     = i;
-            s->weapon_drop_turns_left = 1;
+            s->weapon_drop_turns_left = 0;
             break;
         }
     }
@@ -109,14 +83,13 @@ static void* npc_thread(void* arg_ptr) {
         pthread_mutex_lock(&s->global_mutex);
         while (s->active_entity != slot) {
             if (!g_running || s->phase == PHASE_QUIT ||
-                s->phase == PHASE_WIN  || s->phase == PHASE_LOSE ||
-                !s->entities[slot].alive) {
+                s->phase == PHASE_WIN  || s->phase == PHASE_LOSE) {
                 pthread_mutex_unlock(&s->global_mutex);
                 return nullptr;
             }
             pthread_cond_wait(&s->turn_cond, &s->global_mutex);
         }
-        if (!s->entities[slot].alive) { pthread_mutex_unlock(&s->global_mutex); return nullptr; }
+        if (!s->entities[slot].alive) { pthread_mutex_unlock(&s->global_mutex); continue; }
 
         // Stun wait
         while (s->entities[slot].stunned) {
@@ -202,9 +175,9 @@ static void* death_watcher(void*) {
 }
 
 int main() {
-    srand((unsigned)time(nullptr) ^ (unsigned)getpid());
     g_state = shm_attach();
     if (!g_state) { fprintf(stderr, "[ASP] SHM attach failed\n"); return 1; }
+    srand((unsigned)g_state->roll_no);
 
     struct sigaction sa; memset(&sa, 0, sizeof(sa));
     sa.sa_handler = handle_sigterm; sigaction(SIGTERM, &sa, nullptr);
