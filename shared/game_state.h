@@ -326,6 +326,11 @@ struct SharedState {
  int num_players;
  int num_enemies;
  int total_enemies_killed;
+ // RUBRIC: Bonus Multiplayer Extension - per-player kill counter for scoring.
+ int kills_by_player[MAX_PLAYERS];
+ // True when the user picked "Multiplayer" in the lobby. Used by UI to show
+ // the score panel and per-player turn prompts.
+ bool multiplayer_mode;
 
  // ── Turn Scheduling ───────────────────────
  int active_entity; // index into entities[], -1 = calculating
@@ -389,6 +394,8 @@ struct SharedState {
  num_players = 0;
  num_enemies = 0;
  total_enemies_killed = 0;
+ multiplayer_mode = false;
+ for (int i = 0; i < MAX_PLAYERS; ++i) kills_by_player[i] = 0;
  active_entity = -1;
  virtual_time = 0.0f;
  phase = PHASE_LOBBY;

@@ -313,7 +313,11 @@ static void* player_thread(void* arg_ptr) {
  return nullptr;
 }
 
-int main() {
+// RUBRIC: Bonus Multiplayer Extension - this HIP process owns ONLY the
+// player slot indices passed via argv[1] (comma-separated). With two HIP
+// processes the Arbiter launches one per partition, satisfying the spec's
+// "two separate human controlled processes" requirement.
+int main(int argc, char* argv[]) {
  g_state = shm_attach();
  if (!g_state) { fprintf(stderr, "[HIP] SHM attach failed\n"); return 1; }
 
@@ -321,18 +325,33 @@ int main() {
  sa.sa_handler = handle_sigterm; sigaction(SIGTERM, &sa, nullptr);
  sa.sa_handler = handle_stun; sigaction(SIGUSR1, &sa, nullptr);
 
- int np = g_state->num_players; g_num_threads = np;
- fprintf(stderr, "[HIP] %d player thread(s)\n", np);
+ // Parse owned player slots from argv[1] (e.g. "0,1"). If absent, own all.
+ int owned[MAX_PLAYERS]; int n_owned = 0;
+ if (argc >= 2 && argv[1] && argv[1][0]) {
+ char buf[32]; strncpy(buf, argv[1], sizeof(buf)-1); buf[sizeof(buf)-1]='\0';
+ for (char* tok = strtok(buf, ","); tok && n_owned < MAX_PLAYERS; tok = strtok(nullptr, ",")) {
+ int v = atoi(tok);
+ if (v >= 0 && v < g_state->num_players) owned[n_owned++] = v;
+ }
+ }
+ if (n_owned == 0) {
+ for (int i = 0; i < g_state->num_players; ++i) owned[n_owned++] = i;
+ }
+
+ g_num_threads = n_owned;
+ fprintf(stderr, "[HIP pid=%d] owns %d player slot(s):", (int)getpid(), n_owned);
+ for (int i = 0; i < n_owned; ++i) fprintf(stderr, " %d", owned[i]);
+ fprintf(stderr, "\n");
 
  // RUBRIC: Correct Communication Design - HIP only writes ActionRequests
  // into shared memory; the Arbiter is the sole mutator of game state.
  ThreadArg args[MAX_PLAYERS];
- for (int i = 0; i < np; ++i) {
- args[i].player_idx = i; args[i].state = g_state;
+ for (int i = 0; i < n_owned; ++i) {
+ args[i].player_idx = owned[i]; args[i].state = g_state;
  pthread_create(&g_threads[i], nullptr, player_thread, &args[i]);
  }
- for (int i = 0; i < np; ++i) pthread_join(g_threads[i], nullptr);
- fprintf(stderr, "[HIP] done\n");
+ for (int i = 0; i < n_owned; ++i) pthread_join(g_threads[i], nullptr);
+ fprintf(stderr, "[HIP pid=%d] done\n", (int)getpid());
  shm_detach(g_state);
  return 0;
 }

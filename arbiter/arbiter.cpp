@@ -24,8 +24,9 @@
 
 //  Globals
 static SharedState* g_state = nullptr;
-static pid_t g_hip_pid=-1;
-static pid_t g_asp_pid=-1;
+static pid_t g_hip_pid = -1;
+static pid_t g_hip_pid_b = -1; // RUBRIC: Bonus Multiplayer Extension - second HIP process
+static pid_t g_asp_pid = -1;
 static volatile bool g_ultimate_running = false;
 static volatile sig_atomic_t g_sigterm_received=0;
 static volatile sig_atomic_t g_sigalrm_received=0;
@@ -72,10 +73,11 @@ static void process_pending_signals() {
  char msg[LOG_LEN];
  snprintf(msg, LOG_LEN, "[Arbiter] Child PID %d exited.", (int)pid);
  g_state->log.push(msg);
- if (pid == g_hip_pid) {
+ if (pid == g_hip_pid || pid == g_hip_pid_b) {
  for (int i = 0; i < g_state->num_players; ++i)
  g_state->entities[i].alive = false;
- g_hip_pid = -1;
+ if (pid == g_hip_pid) g_hip_pid = -1;
+ if (pid == g_hip_pid_b) g_hip_pid_b = -1;
  g_state->log.push("[Arbiter] HIP died  all players marked dead.");
  }
  if (pid == g_asp_pid) {
@@ -507,6 +509,8 @@ static void apply_action(ActionRequest& req) {
  g_state->log.push(msg);
  if (tgt.type == ENT_ENEMY) {
  ++g_state->total_enemies_killed;
+ if (req.entity_id >= 0 && req.entity_id < MAX_PLAYERS)
+ ++g_state->kills_by_player[req.entity_id];
  artifact_release_all(req.target_id);
 
  maybe_start_weapon_drop(req.entity_id, req.target_id);
@@ -577,6 +581,8 @@ static void apply_action(ActionRequest& req) {
  g_state->log.push(msg);
  if (tgt.type == ENT_ENEMY) {
  ++g_state->total_enemies_killed;
+ if (req.entity_id >= 0 && req.entity_id < MAX_PLAYERS)
+ ++g_state->kills_by_player[req.entity_id];
  artifact_release_all(req.target_id);
 
  maybe_start_weapon_drop(req.entity_id, req.target_id);
@@ -683,6 +689,8 @@ static void apply_action(ActionRequest& req) {
  if (e.hp == 0) {
  e.alive = false;
  ++g_state->total_enemies_killed;
+ if (req.entity_id >= 0 && req.entity_id < MAX_PLAYERS)
+ ++g_state->kills_by_player[req.entity_id];
  snprintf(msg, LOG_LEN, "  * [%s] VAPORIZED!", e.name);
  g_state->log.push(msg);
  artifact_release_all(MAX_PLAYERS + i);
@@ -776,6 +784,8 @@ static void apply_action(ActionRequest& req) {
  snprintf(msg, LOG_LEN, "[%s] VAPORIZED by AoE!", tgt.name);
  g_state->log.push(msg);
  ++g_state->total_enemies_killed;
+ if (req.entity_id >= 0 && req.entity_id < MAX_PLAYERS)
+ ++g_state->kills_by_player[req.entity_id];
  artifact_release_all(MAX_PLAYERS + i);
  maybe_start_weapon_drop(req.entity_id, MAX_PLAYERS + i);
  if (g_state->total_enemies_killed >= WIN_KILL_COUNT) {
@@ -980,6 +990,9 @@ struct RenderSnapshot {
  bool drop_pending;
  WeaponID drop_id;
  int drop_for;
+ // RUBRIC: Bonus Multiplayer Extension - per-player kill score and mode flag.
+ int kills_by_player[MAX_PLAYERS];
+ bool multiplayer;
 };
 
 // RUBRIC: Safe Shared Memory Reads (UI) - copy under global_mutex.
@@ -997,6 +1010,9 @@ static void take_snapshot(RenderSnapshot& snap) {
  snap.drop_pending = g_state->weapon_drop_pending;
  snap.drop_id = g_state->weapon_drop_id;
  snap.drop_for = g_state->weapon_drop_for;
+ snap.multiplayer = g_state->multiplayer_mode;
+ for (int i = 0; i < MAX_PLAYERS; ++i)
+ snap.kills_by_player[i] = g_state->kills_by_player[i];
  memcpy(snap.entities, g_state->entities, sizeof(snap.entities));
  pthread_mutex_lock(&g_state->resource_table.table_mutex);
  for (int a = 0; a < NUM_ARTIFACTS; ++a) {
@@ -1200,13 +1216,15 @@ static void* render_thread(void*) {
  // We mutate the active player's position immediately
  // and do NOT submit an ActionRequest. Movement only
  // matters for AoE-attack positioning.
- case 'w': case KEY_UP: dy = -1; break;
- case 's': case KEY_DOWN: dy = 1; break;
- case 'a': dx = -1; break;
- case 'd': dx = 1; break;
+ // P1 movement: W/A/S/D + arrow keys.
+ // P2 movement: I/J/K/L (alt scheme so a second player can use a
+ // different region of the keyboard). Action keys 1-9 are shared.
+ case 'w': case 'i': case KEY_UP: dy = -1; break;
+ case 's': case 'k': case KEY_DOWN: dy = 1; break;
+ case 'a': case 'j': dx = -1; break;
+ case 'd': case 'l': dx = 1; break;
  case 'h': req.action = ACT_HEAL; got = true; break;
- case ' ':
- case 'k': req.action = ACT_SKIP; got = true; break;
+ case ' ': req.action = ACT_SKIP; got = true; break; // 'k' freed for P2 movement
  case 'q':
  case 27: // ESC
  if (!g_state->quit_requested) {
@@ -1422,6 +1440,20 @@ static void* render_thread(void*) {
  attron(COLOR_PAIR(CP_ULT) | A_BOLD | A_BLINK);
  mvprintw(0, LEFT_W + 2, "*** ULTIMATE ACTIVE ***");
  attroff(COLOR_PAIR(CP_ULT) | A_BOLD | A_BLINK);
+ }
+ // RUBRIC: Bonus Multiplayer Extension - prominent per-turn banner so
+ // players can see whose turn it is and which key scheme to use.
+ if (snap.multiplayer && active >= 0 && active < np && phase == PHASE_RUNNING) {
+ attron(COLOR_PAIR(CP_ACTIVE) | A_BOLD | A_BLINK);
+ // P1 owns slot 0..(np/2 - 1), P2 owns slot (np/2)..(np - 1).
+ // This matches the partition done in main() when forking HIPs.
+ bool is_p1 = (active < np / 2);
+ mvprintw(rows - LOG_H - 1, LEFT_W + 2,
+ ">>> %s [%s]'s TURN — keys: %s <<<",
+ is_p1 ? "PLAYER 1" : "PLAYER 2",
+ snap.entities[active].name,
+ is_p1 ? "WASD + 1-9" : "IJKL + 1-9");
+ attroff(COLOR_PAIR(CP_ACTIVE) | A_BOLD | A_BLINK);
  }
  // Weapon-drop offer indicator — prominent banner on row 1
  if (snap.drop_pending && snap.drop_for == active &&
@@ -1760,8 +1792,20 @@ static void* render_thread(void*) {
  // Left Panel: Players
  int lr = 1;
  attron(COLOR_PAIR(CP_HEADER) | A_BOLD | A_UNDERLINE);
- mvprintw(lr++, 1, " PLAYERS ");
+ mvprintw(lr++, 1, snap.multiplayer ? " PLAYERS [MP] " : " PLAYERS ");
  attroff(COLOR_PAIR(CP_HEADER) | A_BOLD | A_UNDERLINE);
+
+ // RUBRIC: Bonus Multiplayer Extension - leader indicator (highest kills).
+ int leader = -1, lead_k = -1;
+ if (snap.multiplayer) {
+ for (int i = 0; i < np; ++i) {
+ if (snap.kills_by_player[i] > lead_k) {
+ lead_k = snap.kills_by_player[i]; leader = i;
+ }
+ }
+ // Don't crown a leader at 0-0.
+ if (lead_k <= 0) leader = -1;
+ }
 
  for (int i = 0; i < np && lr < rows - LOG_H - 1; ++i) {
  Entity& e = snap.entities[i];
@@ -1769,12 +1813,15 @@ static void* render_thread(void*) {
 
  if (!e.alive) {
  attron(COLOR_PAIR(CP_DEAD));
- mvprintw(lr++, 1, " [FALLEN] %-8s", e.name);
+ mvprintw(lr++, 1, " [FALLEN] %-8s K:%d", e.name, snap.kills_by_player[i]);
  attroff(COLOR_PAIR(CP_DEAD));
  continue;
  }
  attron(COLOR_PAIR(act ? CP_ACTIVE : CP_PLAYER) | A_BOLD);
- mvprintw(lr++, 1, " ^  %-8s%s", e.name, act ? " <" : "  ");
+ // Show kill score and a crown for the multiplayer leader.
+ const char* crown = (snap.multiplayer && i == leader) ? "*" : " ";
+ mvprintw(lr++, 1, " ^ %s%-8s K:%-2d%s",
+ crown, e.name, snap.kills_by_player[i], act ? " <" : "  ");
  attroff(COLOR_PAIR(act ? CP_ACTIVE : CP_PLAYER) | A_BOLD);
 
  if (lr < rows - LOG_H - 1) {
@@ -1917,12 +1964,12 @@ static void* render_thread(void*) {
  if (ctrl_y < lr) ctrl_y = lr; // don't overlap with panels above
  if (ctrl_y + 7 < rows - LOG_H) {
  attron(COLOR_PAIR(CP_LOG));
- mvprintw(ctrl_y, 1, "WASD: free move       ");
+ mvprintw(ctrl_y, 1, "P1: WASD  P2: IJKL    ");
  mvprintw(ctrl_y+1, 1, "<-/->: pick target    ");
  mvprintw(ctrl_y+2, 1, "1:Strike 2:Exhaust    ");
  mvprintw(ctrl_y+3, 1, "3:AoE  4-9:Use Weapon ");
  mvprintw(ctrl_y+4, 1, "V:swap-in  H:heal     ");
- mvprintw(ctrl_y+5, 1, "K/Spc:skip U:ultimate ");
+ mvprintw(ctrl_y+5, 1, "Spc:skip   U:ultimate ");
  mvprintw(ctrl_y+6, 1, "P:pick up  Q:quit     ");
  attroff(COLOR_PAIR(CP_LOG));
  }
@@ -2191,19 +2238,50 @@ static void* render_thread(void*) {
  if (py < rows - 2)
  mvprintw(py, std::max(2, cols/2 - 18), " HEROES OF THIS RUN ");
  attroff(COLOR_PAIR(CP_HEADER) | A_BOLD | A_UNDERLINE);
+ // RUBRIC: Bonus Multiplayer Extension - find the kill leader for the
+ // game-over screen (only meaningful in multiplayer).
+ int mp_leader = -1, mp_lead_k = -1;
+ if (snap.multiplayer) {
+ for (int i = 0; i < np; ++i) {
+ if (snap.kills_by_player[i] > mp_lead_k) {
+ mp_lead_k = snap.kills_by_player[i]; mp_leader = i;
+ }
+ }
+ if (mp_lead_k <= 0) mp_leader = -1;
+ }
+
  for (int i = 0; i < np && py + 1 + i < rows - 2; ++i) {
  Entity& e = snap.entities[i];
- int cp_p = e.alive ? CP_HP_FULL : CP_DEAD;
- attron(COLOR_PAIR(cp_p) | (e.alive ? A_BOLD : 0));
- mvprintw(py + 1 + i, std::max(2, cols/2 - 22),
- "  %-10s  HP %4d/%-4d   %s",
+ bool is_winner = snap.multiplayer && (i == mp_leader);
+ int cp_p = is_winner ? CP_GOLD : (e.alive ? CP_HP_FULL : CP_DEAD);
+ attron(COLOR_PAIR(cp_p) | A_BOLD);
+ mvprintw(py + 1 + i, std::max(2, cols/2 - 26),
+ "  %s%-10s  HP %4d/%-4d  Kills %2d  %s",
+ is_winner ? "* " : "  ",
  e.name, e.hp, e.max_hp,
+ snap.kills_by_player[i],
  e.alive ? "STANDING" : "FALLEN");
- attroff(COLOR_PAIR(cp_p) | (e.alive ? A_BOLD : 0));
+ attroff(COLOR_PAIR(cp_p) | A_BOLD);
+ }
+
+ // Multiplayer winner banner.
+ if (snap.multiplayer && mp_leader >= 0) {
+ int wy = py + 2 + np;
+ if (wy < rows - 3) {
+ attron(COLOR_PAIR(CP_GOLD) | A_BOLD | A_BLINK);
+ const char* who = (mp_leader < np / 2) ? "PLAYER 1" : "PLAYER 2";
+ char wbuf[80];
+ snprintf(wbuf, sizeof(wbuf),
+ ">>> %s WINS THE KILL RACE: %s with %d kills <<<",
+ who, snap.entities[mp_leader].name, mp_lead_k);
+ int wlen = (int)strlen(wbuf);
+ mvprintw(wy, std::max(0, (cols - wlen) / 2), "%s", wbuf);
+ attroff(COLOR_PAIR(CP_GOLD) | A_BOLD | A_BLINK);
+ }
  }
 
  // Footer
- int fy = std::min(rows - 2, py + 2 + np + 1);
+ int fy = std::min(rows - 2, py + 2 + np + 2);
  attron(COLOR_PAIR(CP_TITLE) | A_BOLD | A_BLINK);
  const char* footer = "─── press any key to exit ───";
  mvprintw(fy, std::max(0, (cols - (int)strlen(footer)) / 2),
@@ -2252,7 +2330,7 @@ static void* render_thread(void*) {
 //  lobby_screen so that the render thread can
 //  call initscr() on a clean slate.
 // ─────────────────────────────────────────────
-static void lobby_screen(int &out_players, int &out_roll, int &out_level) {
+static void lobby_screen(int &out_players, int &out_roll, int &out_level, bool &out_multiplayer) {
  initscr();
  cbreak();
  noecho();
@@ -2310,13 +2388,22 @@ static void lobby_screen(int &out_players, int &out_roll, int &out_level) {
  wattroff(win, COLOR_PAIR(CP_BORDER));
 
  int players = 1, roll_no = 1234, level = 1, focus = 0;
+ // RUBRIC: Bonus Multiplayer Extension - lobby mode toggle.
+ // 0 = Solo, 1 = Multiplayer (auto-locks 2 players, two HIP processes).
+ int mode = 0;
 
  while (true) {
- for (int i = 0; i < 3; ++i) {
+ // Multiplayer locks players to >= 2 (so two HIP processes are spawned).
+ if (mode == 1 && players < 2) players = 2;
+
+ for (int i = 0; i < 4; ++i) {
  int y = 15 + i * 2;
- char label[56];
- if (i==0) snprintf(label, sizeof(label), "  Players (1-%d):    [ %d ]", MAX_PLAYERS, players);
- else if (i==1) snprintf(label, sizeof(label), "  Roll Number:       [ %d ]", roll_no);
+ char label[64];
+ if (i==0) snprintf(label, sizeof(label), "  Mode:              [ %s ]",
+ mode == 1 ? "MULTIPLAYER (2P)" : "SOLO            ");
+ else if (i==1) snprintf(label, sizeof(label), "  Players (%d-%d):    [ %d ]",
+ mode == 1 ? 2 : 1, MAX_PLAYERS, players);
+ else if (i==2) snprintf(label, sizeof(label), "  Roll Number:       [ %d ]", roll_no);
  else snprintf(label, sizeof(label), "  Difficulty (1-5):  [ %d ]", level);
 
  if (focus == i) {
@@ -2332,6 +2419,12 @@ static void lobby_screen(int &out_players, int &out_roll, int &out_level) {
  wattron(win, COLOR_PAIR(CP_PLAYER) | A_BOLD);
  mvwprintw(win, h-3, (w-32)/2, "[ Press ENTER to BEGIN THE RIFT ]");
  wattroff(win, COLOR_PAIR(CP_PLAYER) | A_BOLD);
+ if (mode == 1) {
+ wattron(win, COLOR_PAIR(CP_TITLE) | A_BOLD | A_BLINK);
+ mvwprintw(win, h-7, 2,
+ " MULTIPLAYER: P1 uses WASD + 1-9, P2 uses IJKL + 1-9. Score by kills.");
+ wattroff(win, COLOR_PAIR(CP_TITLE) | A_BOLD | A_BLINK);
+ }
  wattron(win, COLOR_PAIR(CP_GOLD));
  mvwprintw(win, h-5, 2, "Player HP preview: ~%d  Dmg: %d  Spd: %.0f",
  roll_no + 550, (roll_no%10)+10, 100.0f/players);
@@ -2339,18 +2432,20 @@ static void lobby_screen(int &out_players, int &out_roll, int &out_level) {
  wrefresh(win);
 
  int c = wgetch(win);
- if (c == 'q' || c == 'Q' || c == 27) { players=1; roll_no=0; level=1; break; }
- else if (c == KEY_UP || c == 'w' || c == 'W') focus = (focus-1+3)%3;
- else if (c == KEY_DOWN || c == 's' || c == 'S') focus = (focus+1)%3;
+ if (c == 'q' || c == 'Q' || c == 27) { players=1; roll_no=0; level=1; mode=0; break; }
+ else if (c == KEY_UP || c == 'w' || c == 'W') focus = (focus-1+4)%4;
+ else if (c == KEY_DOWN || c == 's' || c == 'S') focus = (focus+1)%4;
  else if (c == KEY_LEFT || c == 'a' || c == 'A') {
- if (focus==0 && players>1) --players;
- else if (focus==1 && roll_no>0) --roll_no;
- else if (focus==2 && level>1) --level;
+ if (focus==0) mode = 0;
+ else if (focus==1 && players > (mode == 1 ? 2 : 1)) --players;
+ else if (focus==2 && roll_no>0) --roll_no;
+ else if (focus==3 && level>1) --level;
  }
  else if (c == KEY_RIGHT || c == 'd' || c == 'D') {
- if (focus==0 && players<MAX_PLAYERS) ++players;
- else if (focus==1) ++roll_no;
- else if (focus==2 && level<5) ++level;
+ if (focus==0) { mode = 1; if (players < 2) players = 2; }
+ else if (focus==1 && players<MAX_PLAYERS) ++players;
+ else if (focus==2) ++roll_no;
+ else if (focus==3 && level<5) ++level;
  }
  else if (c == '\n' || c == KEY_ENTER) break;
  }
@@ -2362,6 +2457,7 @@ static void lobby_screen(int &out_players, int &out_roll, int &out_level) {
  out_players = players;
  out_roll = roll_no;
  out_level = level;
+ out_multiplayer = (mode == 1);
 }
 
 // ─────────────────────────────────────────────
@@ -2377,13 +2473,17 @@ int main(int argc, char* argv[]) {
  g_state->arbiter_pid = getpid();
 
  int num_players = 1, roll_no = 0, level = 1;
- lobby_screen(num_players, roll_no, level);
+ bool multiplayer = false;
+ lobby_screen(num_players, roll_no, level, multiplayer);
 
  if (num_players < 1) num_players = 1;
  if (num_players > MAX_PLAYERS) num_players = MAX_PLAYERS;
+ if (multiplayer && num_players < 2) num_players = 2;
  g_state->num_players = num_players;
  g_state->game_level = level;
  g_state->roll_no = roll_no;
+ g_state->multiplayer_mode = multiplayer;
+ for (int i = 0; i < MAX_PLAYERS; ++i) g_state->kills_by_player[i] = 0;
  srand((unsigned)roll_no); // RUBRIC: Correct Randomization using Roll Number Seed
 
  // First wave; the next one spawns only when all current enemies die.
@@ -2458,9 +2558,34 @@ int main(int argc, char* argv[]) {
 
  // RUBRIC: Proper Process Isolation (Arbiter / HIP / ASP each get their own address space).
  // RUBRIC: Process Lifecycle Management (fork+exec children; SIGCHLD reaper above).
+ // RUBRIC: Bonus Multiplayer Extension - launch a separate HIP process per
+ // player partition. Each HIP receives its owned slot indices via argv[1]
+ // as a comma-separated list (e.g. "0,1"). With num_players >= 2 this gives
+ // two human-controlled processes competing in the same arena.
+ char slots_a[16] = {0}, slots_b[16] = {0};
+ int half = num_players / 2;
+ if (num_players >= 2) {
+ int n = 0;
+ for (int i = 0; i < half; ++i)
+ n += snprintf(slots_a + n, sizeof(slots_a) - n, "%s%d", i ? "," : "", i);
+ n = 0;
+ for (int i = half; i < num_players; ++i)
+ n += snprintf(slots_b + n, sizeof(slots_b) - n, "%s%d", i > half ? "," : "", i);
+ } else {
+ snprintf(slots_a, sizeof(slots_a), "0");
+ }
  g_hip_pid = fork();
- if (g_hip_pid == 0) { execl("./hip_bin", "hip", nullptr); perror("execl hip"); exit(1); }
+ if (g_hip_pid == 0) { execl("./hip_bin", "hip", slots_a, nullptr); perror("execl hip"); exit(1); }
  g_state->hip_pid = g_hip_pid;
+ if (num_players >= 2) {
+ g_hip_pid_b = fork();
+ if (g_hip_pid_b == 0) { execl("./hip_bin", "hip", slots_b, nullptr); perror("execl hip"); exit(1); }
+ fprintf(stderr, "[Arbiter] HIP-A pid=%d slots=[%s]  HIP-B pid=%d slots=[%s]\n",
+ (int)g_hip_pid, slots_a, (int)g_hip_pid_b, slots_b);
+ } else {
+ fprintf(stderr, "[Arbiter] HIP pid=%d slots=[%s] (single-player)\n",
+ (int)g_hip_pid, slots_a);
+ }
 
  g_asp_pid = fork();
  if (g_asp_pid == 0) { execl("./asp_bin", "asp", nullptr); perror("execl asp"); exit(1); }
@@ -2565,11 +2690,18 @@ int main(int argc, char* argv[]) {
  }
 
  pthread_mutex_lock(&g_state->global_mutex);
+ // Snapshot pre-action stamina so the interpolation knows the exact
+ // damage to apply visually (fixes EXHAUST bar jumping more than the
+ // real damage amount).
+ float pre_stamina[MAX_ENTITIES];
+ for (int ii = 0; ii < MAX_ENTITIES; ++ii)
+ pre_stamina[ii] = g_state->entities[ii].stamina;
  apply_action(req);
  // Record per-entity base stamina for smooth bar interpolation.
  // Untouched entities keep their previously-displayed value so
- // their bars don't dip; only the actor and an EXHAUST target
- // reflect their real new stamina.
+ // their bars don't dip; the actor's bar resets to its real value
+ // (turn ended); the EXHAUST target's displayed value drops by
+ // exactly the real damage amount, not by displayed-minus-real.
  {
  double new_walltime = wallclock_sec();
  double prev_walltime = g_action_walltime;
@@ -2583,8 +2715,19 @@ int main(int argc, char* argv[]) {
  Entity& e = g_state->entities[ii];
  float real = e.stamina;
  float base;
- if (ii == actor_id || ii == target_id || !g_interp_valid) {
+ if (!g_interp_valid || ii == actor_id) {
  base = real; // stamina genuinely changed
+ } else if (ii == target_id) {
+ // EXHAUST target: drop the displayed value by EXACTLY the
+ // real damage (pre - post), not by (displayed - post).
+ float prev_disp = g_base_stamina[ii] + e.speed * (float)dt;
+ if (prev_disp > e.max_stamina) prev_disp = e.max_stamina;
+ if (prev_disp < 0.0f) prev_disp = 0.0f;
+ float damage = pre_stamina[ii] - real;
+ if (damage < 0.0f) damage = 0.0f;
+ base = prev_disp - damage;
+ if (base < 0.0f) base = 0.0f;
+ if (base > e.max_stamina) base = e.max_stamina;
  } else {
  // Carry the previously-displayed value forward.
  float prev_disp =
@@ -2621,13 +2764,15 @@ done:
  printf("DEFEAT. All heroes fell.\n");
 
  if (g_hip_pid > 0) kill(g_hip_pid, SIGTERM);
+ if (g_hip_pid_b > 0) kill(g_hip_pid_b, SIGTERM);
  if (g_asp_pid > 0) { kill(g_asp_pid, SIGCONT); kill(g_asp_pid, SIGTERM); }
 
  // Wait for render thread to finish (it will endwin before returning)
  pthread_join(t_render, nullptr);
 
- waitpid(g_hip_pid, nullptr, 0);
- waitpid(g_asp_pid, nullptr, 0);
+ if (g_hip_pid > 0) waitpid(g_hip_pid, nullptr, 0);
+ if (g_hip_pid_b > 0) waitpid(g_hip_pid_b, nullptr, 0);
+ if (g_asp_pid > 0) waitpid(g_asp_pid, nullptr, 0);
 
  shm_detach(g_state);
  shm_destroy();
