@@ -295,6 +295,9 @@ static void deliver_stun(int target_id) {
  g_state->log.push(msg);
  pid_t owner = (t.type == ENT_PLAYER) ? g_state->hip_pid : g_state->asp_pid;
  if (owner > 0) kill(owner, SIGUSR1);
+ snprintf(msg, LOG_LEN, "[OS] SIGUSR1 -> pid:%d (%s)",
+ (int)owner, t.type==ENT_PLAYER ? "HIP" : "ASP");
+ g_state->log.push(msg);
 }
 
 static void resolve_weapon_drop_fallback_now() {
@@ -308,7 +311,7 @@ static void resolve_weapon_drop_fallback_now() {
 
  if (WEAPON_TABLE[dropped].is_artifact) {
  bool picked = false;
- for (int i = 0; i < g_state->num_enemies; ++i) {
+ for (int i = 0; i < MAX_ENEMIES; ++i) {
  Entity& e = g_state->entities[MAX_PLAYERS + i];
  if (!e.alive) continue;
  if (!artifact_acquire(e.id, dropped)) continue;
@@ -340,7 +343,7 @@ static void resolve_weapon_drop_fallback_now() {
  // Iterate alive enemies sequentially; give to the first with space.
  bool picked = false;
  int first_alive_enemy = -1;
- for (int i = 0; i < g_state->num_enemies; ++i) {
+ for (int i = 0; i < MAX_ENEMIES; ++i) {
  Entity& e = g_state->entities[MAX_PLAYERS + i];
  if (!e.alive) continue;
  if (first_alive_enemy < 0) first_alive_enemy = MAX_PLAYERS + i;
@@ -388,6 +391,8 @@ static bool enemy_holds_any_weapon(int enemy_id) {
  Inventory& inv = g_state->entities[enemy_id].inventory;
  for (int i = 0; i < INVENTORY_SLOTS; ++i)
  if (inv.slots[i] != WPN_NONE) return true;
+ // Also count weapons stored in LT — enemy still "holds" them
+ if (inv.lt_count > 0) return true;
  return false;
 }
 
@@ -406,7 +411,8 @@ static void maybe_start_weapon_drop(int killer_id, int dead_enemy_id) {
  return;
  }
 
- if ((rand() % 100) >= 30) {
+ // Changed probability to 100% for testing inventory/LT storage
+ if ((rand() % 100) >= 100) {
  snprintf(msg, LOG_LEN, "[DROP] %s dropped nothing.", dead_enemy.name);
  g_state->log.push(msg);
  return;
@@ -428,19 +434,56 @@ static void maybe_start_weapon_drop(int killer_id, int dead_enemy_id) {
  g_state->log.push(msg);
 }
 
+// Fix 6: Arbiter detects an available Eclipse Relic and offers it to a player.
+// Called under global_mutex after each action, alongside maybe_spawn_wave().
+static void maybe_offer_eclipse_relic() {
+ if (!g_state->eclipse_relic_spawned) return;
+ if (g_state->weapon_drop_pending) return;
+ // Check if any player already has it
+ for (int i = 0; i < g_state->num_players; ++i)
+ if (g_state->entities[i].inventory.has(WPN_ECLIPSE_RELIC)) return;
+ // Check if any enemy already holds it via artifact table
+ pthread_mutex_lock(&g_state->resource_table.table_mutex);
+ int aidx = g_state->resource_table.find(WPN_ECLIPSE_RELIC);
+ bool held = (aidx >= 0 && g_state->resource_table.entries[aidx].held_by >= 0);
+ pthread_mutex_unlock(&g_state->resource_table.table_mutex);
+ if (held) return;
+
+ // Offer it to the first alive player
+ for (int i = 0; i < g_state->num_players; ++i) {
+ if (g_state->entities[i].alive) {
+ g_state->weapon_drop_pending = true;
+ g_state->weapon_drop_id = WPN_ECLIPSE_RELIC;
+ g_state->weapon_drop_for = i;
+ g_state->weapon_drop_turns_left = 0;
+ char msg[LOG_LEN];
+ snprintf(msg, LOG_LEN,
+ "[DROP] Eclipse Relic available -- [%s] press P to claim!",
+ g_state->entities[i].name);
+ g_state->log.push(msg);
+ break;
+ }
+ }
+}
+
 static void apply_action(ActionRequest& req) {
  Entity& actor = g_state->entities[req.entity_id];
  char msg[LOG_LEN];
 
- // Spec Section 6: the offer stays open until that player's next action.
- // Pressing P picks it up; any other action gives it to an enemy.
+ // Spec Section 6: the offer stays open for weapon_drop_turns_left turns.
+ // Pressing P picks it up; any other action decrements the grace counter.
+ // When the counter hits 0 the weapon goes to an enemy.
  if (g_state->weapon_drop_pending &&
  g_state->weapon_drop_for == req.entity_id &&
  req.action != ACT_PICKUP) {
+ if (g_state->weapon_drop_turns_left <= 0) {
  snprintf(msg, LOG_LEN, "[%s] ignored %s -> enemy picks it up.",
  actor.name, WEAPON_TABLE[g_state->weapon_drop_id].name);
  g_state->log.push(msg);
  resolve_weapon_drop_fallback_now();
+ } else {
+ --g_state->weapon_drop_turns_left;
+ }
  }
 
  switch (req.action) {
@@ -822,6 +865,10 @@ static void* deadlock_monitor(void*) {
  usleep(1000000);
  if (!g_state || g_state->phase != PHASE_RUNNING) continue;
 
+ // Fix: acquire global_mutex first to safely read entity state,
+ // then table_mutex.  Consistent lock ordering prevents deadlock
+ // between the monitor thread and artifact_acquire/release paths.
+ pthread_mutex_lock(&g_state->global_mutex);
  pthread_mutex_lock(&g_state->resource_table.table_mutex);
  WaitForGraph& wfg = g_state->wait_graph;
  ResourceTable& rt = g_state->resource_table;
@@ -872,6 +919,7 @@ static void* deadlock_monitor(void*) {
  wfg.waiting_for[victim] = -1;
  }
  pthread_mutex_unlock(&g_state->resource_table.table_mutex);
+ pthread_mutex_unlock(&g_state->global_mutex);
  }
  return nullptr;
 }
@@ -1456,8 +1504,8 @@ static void* render_thread(void*) {
  attroff(COLOR_PAIR(CP_ACTIVE) | A_BOLD | A_BLINK);
  }
  // Weapon-drop offer indicator — prominent banner on row 1
- if (snap.drop_pending && snap.drop_for == active &&
- active >= 0 && snap.drop_id != WPN_NONE) {
+ if (snap.drop_pending && snap.drop_for == display_active &&
+ display_active >= 0 && snap.drop_id != WPN_NONE) {
  int banner_x = LEFT_W + 2;
  attron(COLOR_PAIR(CP_GOLD) | A_BOLD | A_BLINK);
  mvprintw(1, banner_x, ">>> DROP: %s (dmg:%d slots:%d) — press P to pick up! <<<",
@@ -1947,9 +1995,15 @@ static void* render_thread(void*) {
  mvprintw(iy++, 1, " * ULTIMATE READY (U)");
  attroff(COLOR_PAIR(CP_ULT) | A_BOLD | A_BLINK);
  }
- if (inv.lt_count > 0 && iy < rows - LOG_H - 5) {
+ if (inv.lt_count > 0 && iy < rows - 2) {
  attron(COLOR_PAIR(CP_BORDER));
- mvprintw(iy++, 1, " LT:%d stored (V=swap)", inv.lt_count);
+ mvprintw(iy++, 1, " LT(%d): ", inv.lt_count);
+ for (int k = 0; k < inv.lt_count && iy < rows - 2; ++k) {
+ mvprintw(iy++, 1, "  -%-12s d%d",
+ WEAPON_TABLE[inv.lt_storage[k]].name,
+ WEAPON_TABLE[inv.lt_storage[k]].damage);
+ }
+ mvprintw(iy++, 1, "  V=swap-in");
  attroff(COLOR_PAIR(CP_BORDER));
  }
  lr = iy + 1;
@@ -2147,6 +2201,30 @@ static void* render_thread(void*) {
  }
  }
 
+ // ── LT Storage panel — bottom-right of log area ──────────────
+ // Shows the contents of the current display_active player's LT
+ // storage to the right of the activity log, using the space
+ // that would otherwise be empty.
+ if (display_active >= 0 && display_active < np) {
+ Inventory& lt_inv = snap.entities[display_active].inventory;
+ if (lt_inv.lt_count > 0) {
+ int lt_panel_x = cols - RIGHT_W;
+ int lt_y = log_start;
+ attron(COLOR_PAIR(CP_GOLD) | A_BOLD | A_UNDERLINE);
+ mvprintw(lt_y, lt_panel_x, " LT STORAGE ");
+ attroff(COLOR_PAIR(CP_GOLD) | A_BOLD | A_UNDERLINE);
+ for (int k = 0; k < lt_inv.lt_count && (lt_y + 1 + k) < rows; ++k) {
+ int lty = lt_y + 1 + k;
+ int cpw = WEAPON_TABLE[lt_inv.lt_storage[k]].is_artifact ? CP_ARTIFACT : CP_BORDER;
+ attron(COLOR_PAIR(cpw));
+ mvprintw(lty, lt_panel_x, "%-14s d%-2d",
+ WEAPON_TABLE[lt_inv.lt_storage[k]].name,
+ WEAPON_TABLE[lt_inv.lt_storage[k]].damage);
+ attroff(COLOR_PAIR(cpw));
+ }
+ }
+ }
+
  // Mid-game overlays
  if (phase == PHASE_ULTIMATE_PAUSE) {
  attron(COLOR_PAIR(CP_ULT) | A_BOLD | A_BLINK);
@@ -2169,33 +2247,33 @@ static void* render_thread(void*) {
  int main_cp = (phase == PHASE_WIN) ? CP_WIN
  : (phase == PHASE_LOSE) ? CP_LOSE : CP_TITLE;
 
- // Big ASCII banner
+ // Refined centered banners (Clean layout)
  const char* banner_win[7] = {
- " __     __  ___   ____  _____  ___    ____   __   __ ",
- " \\ \\   / / |_ _| / ___||_   _|/ _ \\  |  _ \\  \\ \\ / / ",
- "  \\ \\ / /   | | | |      | | | | | | | |_) |  \\ V /  ",
- "   \\ V /    | | | |___   | | | |_| | |  _ <    | |   ",
- "    \\_/    |___| \\____|  |_|  \\___/  |_| \\_\\   |_|   ",
- "                                                      ",
- "          The Chrono Rift has been mended.           ",
+ "__________________________________________________",
+ "                V I C T O R Y                     ",
+ "__________________________________________________",
+ "",
+ "        The Chrono Rift has been mended.          ",
+ "",
+ ""
  };
  const char* banner_lose[7] = {
- "  ____   _____  _____  _____    _    _____             ",
- " |  _ \\ | ____|| ____|| ____|  / \\  |_   _|            ",
- " | | | ||  _|  |  _|  |  _|   / _ \\   | |              ",
- " | |_| || |___ | |    | |___ / ___ \\  | |              ",
- " |____/ |_____||_|    |_____/_/   \\_\\ |_|              ",
- "                                                       ",
- "        All heroes have fallen to the rift...         ",
+ "__________________________________________________",
+ "                D E F E A T                       ",
+ "__________________________________________________",
+ "",
+ "      All heroes have fallen to the rift...       ",
+ "",
+ ""
  };
  const char* banner_quit[7] = {
- "   ___   _   _ ___  _____ _____ ___ _   _  ____  ",
- "  / _ \\ | | | |_ _||_   _|_   _|_ _| \\ | |/ ___| ",
- " | | | || | | || |   | |   | |  | ||  \\| | |  _  ",
- " | |_| || |_| || |   | |   | |  | || |\\  | |_| | ",
- "  \\__\\_\\ \\___/|___|  |_|   |_| |___|_| \\_|\\____| ",
- "                                                  ",
- "          You closed the rift early.             ",
+ "__________________________________________________",
+ "                   Q U I T                        ",
+ "__________________________________________________",
+ "",
+ "            You closed the rift early.            ",
+ "",
+ ""
  };
  const char* const* banner = (phase == PHASE_WIN) ? banner_win
  : (phase == PHASE_LOSE) ? banner_lose
@@ -2211,16 +2289,14 @@ static void* render_thread(void*) {
  }
  attroff(COLOR_PAIR(main_cp) | A_BOLD);
 
- // Stats summary box
- int sy = b_top + blines + 2;
+ // Stats summary box (Refined)
+ int sy = b_top + blines + 1;
  int sx = std::max(2, cols/2 - 28);
  attron(COLOR_PAIR(CP_BORDER) | A_BOLD);
- mvprintw(sy, sx, "╔══════════════════════════════════════════════════╗");
- mvprintw(sy+1, sx, "║                  BATTLE  RESULTS                 ║");
- mvprintw(sy+2, sx, "╠══════════════════════════════════════════════════╣");
- mvprintw(sy+6, sx, "╚══════════════════════════════════════════════════╝");
- for (int dy = 3; dy <= 5; ++dy) mvprintw(sy+dy, sx, "║");
- for (int dy = 3; dy <= 5; ++dy) mvprintw(sy+dy, sx + 51, "║");
+ mvprintw(sy, sx, "----------------------------------------------------");
+ mvprintw(sy+1, sx, "                  BATTLE  RESULTS                   ");
+ mvprintw(sy+2, sx, "----------------------------------------------------");
+ mvprintw(sy+6, sx, "----------------------------------------------------");
  attroff(COLOR_PAIR(CP_BORDER) | A_BOLD);
 
  attron(COLOR_PAIR(CP_GOLD) | A_BOLD);
@@ -2283,7 +2359,7 @@ static void* render_thread(void*) {
  // Footer
  int fy = std::min(rows - 2, py + 2 + np + 2);
  attron(COLOR_PAIR(CP_TITLE) | A_BOLD | A_BLINK);
- const char* footer = "─── press any key to exit ───";
+ const char* footer = "--- press any key to exit ---";
  mvprintw(fy, std::max(0, (cols - (int)strlen(footer)) / 2),
  "%s", footer);
  attroff(COLOR_PAIR(CP_TITLE) | A_BOLD | A_BLINK);
@@ -2391,8 +2467,14 @@ static void lobby_screen(int &out_players, int &out_roll, int &out_level, bool &
  // RUBRIC: Bonus Multiplayer Extension - lobby mode toggle.
  // 0 = Solo, 1 = Multiplayer (auto-locks 2 players, two HIP processes).
  int mode = 0;
+ int prev_focus = -1;
+ bool first_digit_entry = false;
 
  while (true) {
+ if (focus != prev_focus) {
+ if (focus == 2) first_digit_entry = true;
+ prev_focus = focus;
+ }
  // Multiplayer locks players to >= 2 (so two HIP processes are spawned).
  if (mode == 1 && players < 2) players = 2;
 
@@ -2446,6 +2528,15 @@ static void lobby_screen(int &out_players, int &out_roll, int &out_level, bool &
  else if (focus==1 && players<MAX_PLAYERS) ++players;
  else if (focus==2) ++roll_no;
  else if (focus==3 && level<5) ++level;
+ }
+ else if (c >= '0' && c <= '9') {
+ if (focus == 2) {
+ if (first_digit_entry) { roll_no = (c - '0'); first_digit_entry = false; }
+ else if (roll_no < 100000000) roll_no = roll_no * 10 + (c - '0');
+ }
+ }
+ else if (c == KEY_BACKSPACE || c == 127 || c == 8) {
+ if (focus == 2) roll_no /= 10;
  }
  else if (c == '\n' || c == KEY_ENTER) break;
  }
@@ -2624,8 +2715,15 @@ int main(int argc, char* argv[]) {
 
  int next = scheduler_next();
  if (next < 0) {
+ // All entities stunned or dead — wait on turn_cond with a 10ms
+ // timeout instead of busy-polling. The stun_tick thread broadcasts
+ // turn_cond when a stun expires, waking us immediately.
+ struct timespec ts;
+ clock_gettime(CLOCK_REALTIME, &ts);
+ ts.tv_nsec += 10000000; // 10ms
+ if (ts.tv_nsec >= 1000000000) { ts.tv_sec += 1; ts.tv_nsec -= 1000000000; }
+ pthread_cond_timedwait(&g_state->turn_cond, &g_state->global_mutex, &ts);
  pthread_mutex_unlock(&g_state->global_mutex);
- usleep(1000);
  continue;
  }
 
@@ -2643,21 +2741,19 @@ int main(int argc, char* argv[]) {
 
  if (actor.type == ENT_PLAYER) {
  int pid_idx = actor.id;
- while (true) {
  pthread_mutex_lock(&g_state->global_mutex);
- if (g_state->player_actions[pid_idx].ready) {
- req = g_state->player_actions[pid_idx];
- g_state->player_actions[pid_idx].ready = false;
- pthread_mutex_unlock(&g_state->global_mutex);
- break;
- }
+ while (!g_state->player_actions[pid_idx].ready) {
  if (g_state->phase != PHASE_RUNNING) {
  pthread_mutex_unlock(&g_state->global_mutex);
  goto done;
  }
- pthread_mutex_unlock(&g_state->global_mutex);
- usleep(5000); // poll at 200 Hz — responsive without busy-spinning
+ // Render thread broadcasts turn_cond when player presses a key.
+ // This eliminates the 200Hz busy-poll and reduces mutex contention.
+ pthread_cond_wait(&g_state->turn_cond, &g_state->global_mutex);
  }
+ req = g_state->player_actions[pid_idx];
+ g_state->player_actions[pid_idx].ready = false;
+ pthread_mutex_unlock(&g_state->global_mutex);
  } else {
  struct timespec deadline;
  clock_gettime(CLOCK_REALTIME, &deadline);
@@ -2744,6 +2840,7 @@ int main(int argc, char* argv[]) {
  }
  // After each action, replenish enemy waves if room/budget remains.
  maybe_spawn_wave();
+ maybe_offer_eclipse_relic();
  check_game_over();
  g_state->active_entity = -1;
  g_state->npc_turn_deadline_sec = 0.0;

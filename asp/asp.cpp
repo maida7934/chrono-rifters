@@ -49,7 +49,12 @@ static void maybe_drop_weapon(SharedState* s, int slot) {
 
 // RUBRIC: Correct Handling of Dynamic Artifact (Eclipse Relic spawned at run time).
 static void maybe_spawn_eclipse(SharedState* s) {
- if (s->total_enemies_killed < 3) return;
+ // Fix: read total_enemies_killed under global_mutex to prevent race.
+ pthread_mutex_lock(&s->global_mutex);
+ int killed = s->total_enemies_killed;
+ pthread_mutex_unlock(&s->global_mutex);
+ if (killed < 3) return;
+
  pthread_mutex_lock(&s->resource_table.table_mutex);
  if (s->eclipse_relic_spawned || (rand()%100) >= 40) {
  pthread_mutex_unlock(&s->resource_table.table_mutex); return;
@@ -59,18 +64,10 @@ static void maybe_spawn_eclipse(SharedState* s) {
  s->resource_table.entries[2].held_by = -1;
  s->resource_table.entries[2].locked = false;
  pthread_mutex_unlock(&s->resource_table.table_mutex);
+ // Fix: Arbiter is the sole owner of weapon_drop state.
+ // Only push the log; let the Arbiter's spawn-wave/wave-check detect the
+ // newly-available Eclipse Relic via the resource_table and notify the player.
  s->log.push("[World] *** Eclipse Relic appeared! ***");
- pthread_mutex_lock(&s->global_mutex);
- for (int i = 0; i < s->num_players; ++i) {
- if (s->entities[i].alive) {
- s->weapon_drop_pending = true;
- s->weapon_drop_id = WPN_ECLIPSE_RELIC;
- s->weapon_drop_for = i;
- s->weapon_drop_turns_left = 0;
- break;
- }
- }
- pthread_mutex_unlock(&s->global_mutex);
 }
 
 // RUBRIC: Thread-per-NPC Implementation.

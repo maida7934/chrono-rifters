@@ -32,15 +32,12 @@ inline bool allocator_add(Inventory& inv, WeaponID id) {
  return true;
  }
 
- // 2. Need to evict minimally. Strategy: repeatedly pick the weapon
- //    whose removal would create the largest contiguous free region
- //    (adjacency-aware), evict it to LT storage, and retry.
- //    This naturally favours weapons adjacent to existing gaps —
- //    e.g. evicting a 3-slot weapon at index 13 when slots 14-19
- //    are free is better than evicting a 6-slot weapon at index 0.
- //    Never evict artifacts.
+ // 2. Need to evict minimally. Strategy: prefer evicting the smallest
+ //    weapon whose removal creates a gap large enough for the incoming
+ //    weapon. If no single eviction suffices, fall back to evicting the
+ //    weapon that creates the largest gap and iterate. Never evict artifacts.
  while (true) {
- // Collect current weapon runs
+ // Collect current weapon runs using authoritative slot_size
  struct Run { int pos; WeaponID wid; int sz; };
  Run runs[INVENTORY_SLOTS];
  int nruns = 0;
@@ -49,16 +46,49 @@ inline bool allocator_add(Inventory& inv, WeaponID id) {
  while (i < INVENTORY_SLOTS) {
  if (inv.slots[i] == WPN_NONE) { ++i; continue; }
  WeaponID w = (WeaponID)inv.slots[i];
- int j = i;
- while (j < INVENTORY_SLOTS && inv.slots[j] == (int)w) ++j;
- runs[nruns++] = {i, w, j - i};
- i = j;
+ // Use the authoritative slot_size, not a counted run.
+ // This prevents orphaned slots from mis-sized runs.
+ int sz = WEAPON_TABLE[w].slot_size;
+ runs[nruns++] = {i, w, sz};
+ i += sz; // jump by true size, not counted size
  }
  }
 
- // For each evictable weapon, simulate removal and measure the
- // resulting largest contiguous free region.
+ // First pass: find the smallest weapon whose removal creates enough gap.
+ // When choosing which weapon to evict, prefer one whose removal
+ // merges with adjacent free space to create the cleanest gap.
+ // Score = gap size AFTER removal, tie-break by smallest weapon size.
  int best_run = -1;
+ int best_score = -1; // higher = better (gap size after removal)
+ int best_sz = 9999;
+
+ for (int r = 0; r < nruns; ++r) {
+ if (WEAPON_TABLE[runs[r].wid].is_artifact) continue;
+
+ // Simulate removal: compute ALL contiguous free regions
+ int gap = 0, max_gap = 0;
+ for (int i = 0; i < INVENTORY_SLOTS; ++i) {
+ bool free_cell = (inv.slots[i] == WPN_NONE) ||
+ (i >= runs[r].pos && i < runs[r].pos + runs[r].sz);
+ if (free_cell) { ++gap; if (gap > max_gap) max_gap = gap; }
+ else gap = 0;
+ }
+
+ // First priority: can this single eviction fit the weapon?
+ if (max_gap >= size) {
+ // Among sufficient evictions, pick smallest weapon (min eviction)
+ if (best_run < 0 || runs[r].sz < best_sz ||
+ (runs[r].sz == best_sz && max_gap > best_score)) {
+ best_sz = runs[r].sz;
+ best_score = max_gap;
+ best_run = r;
+ }
+ }
+ }
+
+ // Fallback: no single eviction is enough, pick one that
+ // creates the largest gap (most progress toward fitting).
+ if (best_run < 0) {
  int best_gap = 0;
  for (int r = 0; r < nruns; ++r) {
  if (WEAPON_TABLE[runs[r].wid].is_artifact) continue;
@@ -69,9 +99,7 @@ inline bool allocator_add(Inventory& inv, WeaponID id) {
  if (free_cell) { ++gap; if (gap > max_gap) max_gap = gap; }
  else gap = 0;
  }
- if (max_gap > best_gap) {
- best_gap = max_gap;
- best_run = r;
+ if (max_gap > best_gap) { best_gap = max_gap; best_run = r; }
  }
  }
 
