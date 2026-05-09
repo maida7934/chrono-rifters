@@ -315,9 +315,6 @@ struct SharedState {
     int    num_enemies;
     int    total_enemies_killed;
 
-    // ── Shared Player Party Inventory (spec §6: one 20-slot array for all heroes)
-    Inventory player_party_inventory;
-
     // ── Turn Scheduling ───────────────────────
     int    active_entity;   // index into entities[], -1 = calculating
     float  virtual_time;    // current scheduler time
@@ -396,8 +393,6 @@ struct SharedState {
         quit_requested        = false;
         quit_requested_by     = -1;
         use_ncurses_ui        = false;
-
-        player_party_inventory.init();
 
         for (int i = 0; i < MAX_PLAYERS; ++i)
             player_actions[i].ready = false;

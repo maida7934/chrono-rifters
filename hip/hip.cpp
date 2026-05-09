@@ -69,27 +69,27 @@ static void print_menu(SharedState* s, int pidx) {
             hip_print("  [%d] %s  HP:%d/%d\n", MAX_PLAYERS+i, e.name, e.hp, e.max_hp);
     }
 
-    // Inventory — show slot-by-slot (shared party inventory)
-    hip_print("PARTY INVENTORY [20 slots]:\n  ");
+    // Inventory — show slot-by-slot (per-player inventory)
+    hip_print("INVENTORY [%s] [20 slots]:\n  ", me.name);
     for (int i = 0; i < INVENTORY_SLOTS; ) {
-        if (s->player_party_inventory.slots[i] == WPN_NONE) {
+        if (me.inventory.slots[i] == WPN_NONE) {
             hip_print("[ ] "); ++i; continue;
         }
-        WeaponID w = (WeaponID)s->player_party_inventory.slots[i];
+        WeaponID w = (WeaponID)me.inventory.slots[i];
         int sz = WEAPON_TABLE[w].slot_size;
         hip_print("[%s x%d] ", WEAPON_TABLE[w].name, sz);
         i += sz;
     }
     hip_print("\n");
 
-    if (s->player_party_inventory.lt_count > 0) {
+    if (me.inventory.lt_count > 0) {
         hip_print("LT STORAGE: ");
-        for (int i = 0; i < s->player_party_inventory.lt_count; ++i)
-            hip_print("%s ", WEAPON_TABLE[s->player_party_inventory.lt_storage[i]].name);
+        for (int i = 0; i < me.inventory.lt_count; ++i)
+            hip_print("%s ", WEAPON_TABLE[me.inventory.lt_storage[i]].name);
         hip_print("\n");
     }
 
-    bool can_ult = s->player_party_inventory.has(WPN_SOLAR_CORE) && s->player_party_inventory.has(WPN_LUNAR_BLADE);
+    bool can_ult = me.inventory.has(WPN_SOLAR_CORE) && me.inventory.has(WPN_LUNAR_BLADE);
     hip_print("Actions: 1)Strike 2)Exhaust 3)UseWeapon 4)SwapIn 5)Heal 6)Skip");
     if (can_ult) hip_print(" 7)ULTIMATE");
 
@@ -123,23 +123,23 @@ static int pick_enemy(SharedState* s) {
 static WeaponID pick_inventory_weapon(SharedState* s, int pidx) {
     hip_print("Weapon index (0-%d): ", WPN_COUNT-1);
     for (int w = 0; w < WPN_COUNT; ++w)
-        if (s->player_party_inventory.has((WeaponID)w))
+        if (s->entities[pidx].inventory.has((WeaponID)w))
             hip_print("%d=%s ", w, WEAPON_TABLE[w].name);
     hip_print(": ");
     int c = hip_read_int(-1);
-    if (c < 0 || c >= WPN_COUNT || !s->player_party_inventory.has((WeaponID)c)) { hip_print("Not found.\n"); return WPN_NONE; }
+    if (c < 0 || c >= WPN_COUNT || !s->entities[pidx].inventory.has((WeaponID)c)) { hip_print("Not found.\n"); return WPN_NONE; }
     return (WeaponID)c;
 }
 static WeaponID pick_lt_weapon(SharedState* s, int pidx) {
-    if (s->player_party_inventory.lt_count == 0) { hip_print("LT storage empty.\n"); return WPN_NONE; }
+    if (s->entities[pidx].inventory.lt_count == 0) { hip_print("LT storage empty.\n"); return WPN_NONE; }
     hip_print("LT: ");
-    for (int i = 0; i < s->player_party_inventory.lt_count; ++i)
-        hip_print("%d=%s ", s->player_party_inventory.lt_storage[i], WEAPON_TABLE[s->player_party_inventory.lt_storage[i]].name);
+    for (int i = 0; i < s->entities[pidx].inventory.lt_count; ++i)
+        hip_print("%d=%s ", s->entities[pidx].inventory.lt_storage[i], WEAPON_TABLE[s->entities[pidx].inventory.lt_storage[i]].name);
     hip_print("Choice: ");
     int c = hip_read_int(-1);
     if (c < 0 || c >= WPN_COUNT) return WPN_NONE;
-    for (int i = 0; i < s->player_party_inventory.lt_count; ++i)
-        if (s->player_party_inventory.lt_storage[i] == c) return (WeaponID)c;
+    for (int i = 0; i < s->entities[pidx].inventory.lt_count; ++i)
+        if (s->entities[pidx].inventory.lt_storage[i] == c) return (WeaponID)c;
     hip_print("Not in LT.\n"); return WPN_NONE;
 }
 
@@ -262,8 +262,8 @@ static void* player_thread(void* arg_ptr) {
         case 5: req.action = ACT_HEAL; break;
         case 6: req.action = ACT_SKIP; break;
         case 7: {
-            bool can = s->player_party_inventory.has(WPN_SOLAR_CORE) &&
-                       s->player_party_inventory.has(WPN_LUNAR_BLADE);
+            bool can = s->entities[pidx].inventory.has(WPN_SOLAR_CORE) &&
+                       s->entities[pidx].inventory.has(WPN_LUNAR_BLADE);
             if (!can) { hip_print("Need Solar Core + Lunar Blade!\n"); valid=false; }
             else req.action = ACT_ULTIMATE;
             break;
