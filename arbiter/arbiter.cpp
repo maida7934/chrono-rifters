@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cerrno>
 #include <unistd.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <pthread.h>
@@ -1151,6 +1152,16 @@ static void dump_action_log_to_file(const RenderSnapshot& snap) {
 // RUBRIC: Real-Time State Visualization
 // RUBRIC: Non-Blocking UI Execution (80ms frame, snapshot-only reads)
 static void* render_thread(void*) {
+ // Redirect the Arbiter process's own stderr to arbiter.log so that
+ // fprintf(stderr,...) calls from the allocator, deadlock monitor,
+ // stun thread, etc. do NOT bleed onto the ncurses UI. Append mode
+ // preserves logs across runs. Done here (once, when the render
+ // thread starts) so lobby / pre-game messages still reach the TTY.
+ {
+ int fd = open("arbiter.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+ if (fd >= 0) { dup2(fd, STDERR_FILENO); close(fd); }
+ }
+
  // ncurses was already initialised (and endwin'd) by lobby_screen.
  // Re-initialise cleanly for the game screen.
  initscr();
@@ -2809,12 +2820,20 @@ int main(int argc, char* argv[]) {
  } else {
  snprintf(slots_a, sizeof(slots_a), "0");
  }
+ // Helper: redirect this child's stderr to a log file so child-side
+ // fprintf(stderr,...) does NOT bleed into the ncurses UI. The file is
+ // opened in append mode so subsequent runs don't clobber old logs.
+ auto redirect_child_stderr = [](const char* path) {
+ int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+ if (fd >= 0) { dup2(fd, STDERR_FILENO); close(fd); }
+ };
+
  g_hip_pid = fork();
- if (g_hip_pid == 0) { execl("./hip_bin", "hip", slots_a, nullptr); perror("execl hip"); exit(1); }
+ if (g_hip_pid == 0) { redirect_child_stderr("hip.log"); execl("./hip_bin", "hip", slots_a, nullptr); perror("execl hip"); exit(1); }
  g_state->hip_pid = g_hip_pid;
  if (num_players >= 2) {
  g_hip_pid_b = fork();
- if (g_hip_pid_b == 0) { execl("./hip_bin", "hip", slots_b, nullptr); perror("execl hip"); exit(1); }
+ if (g_hip_pid_b == 0) { redirect_child_stderr("hip.log"); execl("./hip_bin", "hip", slots_b, nullptr); perror("execl hip"); exit(1); }
  fprintf(stderr, "[Arbiter] HIP-A pid=%d slots=[%s]  HIP-B pid=%d slots=[%s]\n",
  (int)g_hip_pid, slots_a, (int)g_hip_pid_b, slots_b);
  } else {
@@ -2823,7 +2842,7 @@ int main(int argc, char* argv[]) {
  }
 
  g_asp_pid = fork();
- if (g_asp_pid == 0) { execl("./asp_bin", "asp", nullptr); perror("execl asp"); exit(1); }
+ if (g_asp_pid == 0) { redirect_child_stderr("asp.log"); execl("./asp_bin", "asp", nullptr); perror("execl asp"); exit(1); }
  g_state->asp_pid = g_asp_pid;
 
  // Small delay to let children attach to SHM before scheduling begins
