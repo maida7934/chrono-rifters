@@ -64,6 +64,7 @@ static void process_pending_signals() {
  g_state->log.push("[Arbiter] Ultimate window expired. ASP resumed.");
  g_state->phase = PHASE_RUNNING;
  g_state->ultimate_active = false;
+ g_state->active_entity = -1; // invalidate current turn, force reschedule
  pthread_cond_broadcast(&g_state->turn_cond);
  }
  }
@@ -792,6 +793,11 @@ static void apply_action(ActionRequest& req) {
  actor.stamina = 0; return;
  }
  }
+ }
+ if (g_state->phase == PHASE_ULTIMATE_PAUSE) {
+ snprintf(msg, LOG_LEN, "[%s] ULTIMATE BLOCKED: already in Chrono Burst window",
+ actor.name);
+ g_state->log.push(msg); actor.stamina = 0; break;
  }
  if (g_asp_pid > 0) kill(g_asp_pid, SIGSTOP);
  g_state->phase = PHASE_ULTIMATE_PAUSE;
@@ -2870,6 +2876,7 @@ int main(int argc, char* argv[]) {
  // Main scheduling loop
  char msg[LOG_LEN];
  while (true) {
+ reschedule:
  pthread_mutex_lock(&g_state->global_mutex);
 
  if (g_state->phase == PHASE_QUIT ||
@@ -2919,6 +2926,11 @@ int main(int argc, char* argv[]) {
  if (g_state->phase != PHASE_RUNNING && g_state->phase != PHASE_ULTIMATE_PAUSE) {
  pthread_mutex_unlock(&g_state->global_mutex);
  goto done;
+ }
+ // Reschedule if our turn was invalidated (e.g. ultimate pause ended).
+ if (g_state->active_entity != pid_idx) {
+ pthread_mutex_unlock(&g_state->global_mutex);
+ goto reschedule;
  }
  // Render thread broadcasts turn_cond when player presses a key.
  // This eliminates the 200Hz busy-poll and reduces mutex contention.
