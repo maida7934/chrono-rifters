@@ -2664,7 +2664,7 @@ static void lobby_screen(int &out_players, int &out_roll, int &out_level, bool &
  }
  wattron(win, COLOR_PAIR(CP_GOLD));
  mvwprintw(win, h-5, 2, "Player HP preview: ~%d  Dmg: %d  Spd: %.0f",
- roll_no + 550, (roll_no%10)+10, 100.0f/players);
+ (roll_no%100) + 550, (roll_no%10)+10, 100.0f/players);
  wattroff(win, COLOR_PAIR(CP_GOLD)); 
  wrefresh(win);
 
@@ -2744,7 +2744,7 @@ int main(int argc, char* argv[]) {
  // Init players
  for (int i = 0; i < num_players; ++i) {
  g_state->entities[i].init_player(i, roll_no, num_players);
- g_state->entities[i].max_hp = roll_no + 100 + rand() % 901;
+ g_state->entities[i].max_hp = (roll_no % 100) + 100 + rand() % 901;
  g_state->entities[i].hp = g_state->entities[i].max_hp;
  g_state->entities[i].damage = (roll_no % 10) + 10;
  g_state->entities[i].speed = 100.0f / num_players;

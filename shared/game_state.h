@@ -183,8 +183,8 @@ struct Entity {
  max_stamina = 100.0f;
  stamina = 0.0f;
  speed = 100.0f / num_players;
- // HP = roll_no + rand(100..1000)
- max_hp = roll_no + 100 + rand() % 901;
+ // HP = last 2 digits of roll_no + rand(100..1000)
+ max_hp = (roll_no % 100) + 100 + rand() % 901;
  hp = max_hp;
  // Damage = last digit of roll_no + 10
  damage = (roll_no % 10) + 10;
