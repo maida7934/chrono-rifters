@@ -51,6 +51,19 @@ static void handle_sigalrm(int) { g_sigalrm_received = 1; }
 static void handle_sigchld(int) { g_sigchld_received = 1; }
 
 static void process_pending_signals() {
+ // FIX 3: Handle SIGTERM inside process_pending_signals so the inner
+ // player-wait loop (which checks phase != RUNNING && != ULTIMATE_PAUSE)
+ // can break out when the user presses Q/ESC during an Ultimate pause.
+ if (g_sigterm_received) {
+ g_sigterm_received = 0;
+ if (g_state->phase != PHASE_WIN && g_state->phase != PHASE_LOSE) {
+ g_state->phase = PHASE_QUIT;
+ g_state->log.push("[ARBITER] SIGTERM — shutting down.");
+ }
+ // Always resume ASP so it can exit cleanly (may be SIGSTOP'd)
+ if (g_asp_pid > 0) { kill(g_asp_pid, SIGCONT); kill(g_asp_pid, SIGTERM); }
+ pthread_cond_broadcast(&g_state->turn_cond);
+ }
  if (g_sigalrm_received) {
     g_sigalrm_received = 0;
     // Unconditionally resume ASP and reset phase whenever SIGALRM
@@ -65,6 +78,11 @@ static void process_pending_signals() {
         g_state->phase = PHASE_RUNNING;
         g_state->ultimate_active = false;
         g_state->active_entity = -1;
+        pthread_cond_broadcast(&g_state->turn_cond);
+    }
+    // FIX 1: If phase is already terminal (WIN/LOSE/QUIT), broadcast
+    // anyway so the main loop's cond-wait wakes and exits cleanly.
+    else {
         pthread_cond_broadcast(&g_state->turn_cond);
     }
 }

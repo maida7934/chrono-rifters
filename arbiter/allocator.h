@@ -15,12 +15,49 @@
 //     player so other players cannot acquire them while stored.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Compacts the primary inventory by shifting all placed weapons to the left,
+// eliminating fragmentation gaps without changing LT storage.
+inline void compact_inventory(Inventory& inv) {
+    struct Run { WeaponID wid; int sz; };
+    Run runs[INVENTORY_SLOTS];
+    int nruns = 0;
+    bool seen[WPN_COUNT] = {};
+    int i = 0;
+    while (i < INVENTORY_SLOTS) {
+        if (inv.slots[i] == WPN_NONE) { ++i; continue; }
+        WeaponID w = (WeaponID)inv.slots[i];
+        int sz = WEAPON_TABLE[w].slot_size;
+        if (!seen[(int)w]) {
+            seen[(int)w] = true;
+            runs[nruns++] = {w, sz};
+        }
+        i += sz;
+    }
+    // Wipe and re-place tightly from slot 0
+    for (int s = 0; s < INVENTORY_SLOTS; ++s) inv.slots[s] = WPN_NONE;
+    int pos = 0;
+    for (int r = 0; r < nruns; ++r) {
+        for (int s = 0; s < runs[r].sz && pos < INVENTORY_SLOTS; ++s)
+            inv.slots[pos++] = (int)runs[r].wid;
+    }
+}
+
 // Attempt to add weapon to inventory. Returns true on success.
 inline bool allocator_add(Inventory& inv, WeaponID id) {
     int size = WEAPON_TABLE[id].slot_size;
 
     // 1. Try direct fit
     int start = inv.find_contiguous(size);
+    if (start >= 0) {
+        inv.place(start, id, size);
+        return true;
+    }
+
+    // 1b. Compact first — close existing gaps before evicting anything.
+    // This eliminates fragmentation from prior swap-outs so we evict the
+    // minimum number of weapons needed, and the result has no internal gaps.
+    compact_inventory(inv);
+    start = inv.find_contiguous(size);
     if (start >= 0) {
         inv.place(start, id, size);
         return true;
@@ -125,7 +162,8 @@ inline bool allocator_add(Inventory& inv, WeaponID id) {
         fprintf(stderr, "[Allocator] Evicted '%s' to LT storage.\n",
             WEAPON_TABLE[runs[best_run].wid].name);
 
-        // Retry placement
+        // Compact after eviction to close gaps, then retry placement
+        compact_inventory(inv);
         start = inv.find_contiguous(size);
         if (start >= 0) {
             inv.place(start, id, size);
