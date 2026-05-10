@@ -35,7 +35,6 @@ inline SharedState* shm_create() {
  }
  
  SharedState* s = reinterpret_cast<SharedState*>(ptr);
- memset(s, 0, sizeof(SharedState));
  s->init();
  
  fprintf(stderr, "[SHM] Initialized shared state at %p\n", (void*)s);
