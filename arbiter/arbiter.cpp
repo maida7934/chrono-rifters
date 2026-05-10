@@ -2513,7 +2513,7 @@ static void* render_thread(void*) {
  if (wy < rows - 3) {
  attron(COLOR_PAIR(CP_GOLD) | A_BOLD | A_BLINK);
  const char* who = (mp_leader < np / 2) ? "PLAYER 1" : "PLAYER 2";
- char wbuf[80];
+ char wbuf[128];
  snprintf(wbuf, sizeof(wbuf),
  ">>> %s WINS THE KILL RACE: %s with %d kills <<<",
  who, snap.entities[mp_leader].name, mp_lead_k);
@@ -2756,7 +2756,7 @@ int main(int argc, char* argv[]) {
  // Init players
  for (int i = 0; i < num_players; ++i) {
  g_state->entities[i].init_player(i, roll_no, num_players);
- g_state->entities[i].max_hp = (roll_no % 100) + 100 + rand() % 901;
+ g_state->entities[i].max_hp = (roll_no % 1000) + 100 + rand() % 901;
  g_state->entities[i].hp = g_state->entities[i].max_hp;
  g_state->entities[i].damage = (roll_no % 10) + 10;
  g_state->entities[i].speed = 100.0f / num_players;
