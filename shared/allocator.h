@@ -9,21 +9,15 @@
 //  1. Find contiguous free space in primary inventory.
 //  2. If none, evict the MINIMUM number of weapons to LT storage until
 //     enough contiguous space is freed (first-fit eviction order).
-//  3. Hard constraint: Solar Core + Lunar Blade together fill all 20 slots;
-//     allocator must enforce this.
+//  3. Solar Core (10) + Lunar Blade (10) together fill all 20 slots; if
+//     both artifacts are present, picking up another weapon evicts one of
+//     them to LT storage. Their resource-table locks remain owned by the
+//     player so other players cannot acquire them while stored.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Attempt to add weapon to inventory. Returns true on success.
 inline bool allocator_add(Inventory& inv, WeaponID id) {
  int size = WEAPON_TABLE[id].slot_size;
-
- // Hard constraint: Solar Core (10) + Lunar Blade (10) = all 20 slots.
- // If both are already in primary inventory, refuse any further addition.
- if (inv.has(WPN_SOLAR_CORE) && inv.has(WPN_LUNAR_BLADE) && id != WPN_SOLAR_CORE && id != WPN_LUNAR_BLADE) {
- fprintf(stderr, "[Allocator] Inventory full (20/20 with both artifacts). Cannot add '%s'.\n",
- WEAPON_TABLE[id].name);
- return false;
- }
 
  // 1. Try direct fit
  int start = inv.find_contiguous(size);
@@ -33,9 +27,11 @@ inline bool allocator_add(Inventory& inv, WeaponID id) {
  }
 
  // 2. Need to evict minimally. Strategy: prefer evicting the smallest
- //    weapon whose removal creates a gap large enough for the incoming
- //    weapon. If no single eviction suffices, fall back to evicting the
- //    weapon that creates the largest gap and iterate. Never evict artifacts.
+ //    NON-ARTIFACT weapon whose removal creates a gap large enough.
+ //    If no non-artifact eviction is sufficient, allow artifact eviction
+ //    as a last resort (artifacts move to LT but their resource-table
+ //    locks remain owned by the original player so other players cannot
+ //    use them while stored).
  while (true) {
  // Collect current weapon runs using authoritative slot_size
  struct Run { int pos; WeaponID wid; int sz; };
@@ -54,18 +50,14 @@ inline bool allocator_add(Inventory& inv, WeaponID id) {
  }
  }
 
- // First pass: find the smallest weapon whose removal creates enough gap.
- // When choosing which weapon to evict, prefer one whose removal
- // merges with adjacent free space to create the cleanest gap.
- // Score = gap size AFTER removal, tie-break by smallest weapon size.
- int best_run = -1;
- int best_score = -1; // higher = better (gap size after removal)
- int best_sz = 9999;
-
- for (int r = 0; r < nruns; ++r) {
- if (WEAPON_TABLE[runs[r].wid].is_artifact) continue;
-
- // Simulate removal: compute ALL contiguous free regions
+ // Pick best run to evict. Two-tier preference:
+ //   Tier 1: non-artifact whose removal creates a sufficient gap.
+ //   Tier 2: any weapon (including artifacts) whose removal creates
+ //   a sufficient gap.
+ // Within a tier, tie-break by smallest weapon size, then largest gap.
+ // If no eviction creates a sufficient gap, fall back to whichever
+ // creates the largest gap (preferring non-artifacts).
+ auto score_eviction = [&](int r, int& out_gap) {
  int gap = 0, max_gap = 0;
  for (int i = 0; i < INVENTORY_SLOTS; ++i) {
  bool free_cell = (inv.slots[i] == WPN_NONE) ||
@@ -73,10 +65,18 @@ inline bool allocator_add(Inventory& inv, WeaponID id) {
  if (free_cell) { ++gap; if (gap > max_gap) max_gap = gap; }
  else gap = 0;
  }
+ out_gap = max_gap;
+ };
 
- // First priority: can this single eviction fit the weapon?
+ int best_run = -1;
+ int best_score = -1;
+ int best_sz = 9999;
+
+ // Tier 1 — non-artifacts that fit
+ for (int r = 0; r < nruns; ++r) {
+ if (WEAPON_TABLE[runs[r].wid].is_artifact) continue;
+ int max_gap; score_eviction(r, max_gap);
  if (max_gap >= size) {
- // Among sufficient evictions, pick smallest weapon (min eviction)
  if (best_run < 0 || runs[r].sz < best_sz ||
  (runs[r].sz == best_sz && max_gap > best_score)) {
  best_sz = runs[r].sz;
@@ -86,20 +86,33 @@ inline bool allocator_add(Inventory& inv, WeaponID id) {
  }
  }
 
+ // Tier 2 — artifacts that fit (only if no non-artifact worked)
+ if (best_run < 0) {
+ for (int r = 0; r < nruns; ++r) {
+ if (!WEAPON_TABLE[runs[r].wid].is_artifact) continue;
+ int max_gap; score_eviction(r, max_gap);
+ if (max_gap >= size) {
+ if (best_run < 0 || runs[r].sz < best_sz ||
+ (runs[r].sz == best_sz && max_gap > best_score)) {
+ best_sz = runs[r].sz;
+ best_score = max_gap;
+ best_run = r;
+ }
+ }
+ }
+ }
+
  // Fallback: no single eviction is enough, pick one that
- // creates the largest gap (most progress toward fitting).
+ // creates the largest gap (still preferring non-artifacts).
  if (best_run < 0) {
  int best_gap = 0;
+ for (int pass = 0; pass < 2 && best_run < 0; ++pass) {
+ bool want_artifacts = (pass == 1);
  for (int r = 0; r < nruns; ++r) {
- if (WEAPON_TABLE[runs[r].wid].is_artifact) continue;
- int gap = 0, max_gap = 0;
- for (int i = 0; i < INVENTORY_SLOTS; ++i) {
- bool free_cell = (inv.slots[i] == WPN_NONE) ||
- (i >= runs[r].pos && i < runs[r].pos + runs[r].sz);
- if (free_cell) { ++gap; if (gap > max_gap) max_gap = gap; }
- else gap = 0;
- }
+ if (WEAPON_TABLE[runs[r].wid].is_artifact != want_artifacts) continue;
+ int max_gap; score_eviction(r, max_gap);
  if (max_gap > best_gap) { best_gap = max_gap; best_run = r; }
+ }
  }
  }
 

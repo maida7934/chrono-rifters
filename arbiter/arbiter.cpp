@@ -231,6 +231,15 @@ static bool artifact_acquire(int entity_id, WeaponID wpn) {
  g_state->log.push(msg);
  pthread_mutex_unlock(&rt.table_mutex);
  return true;
+ } else if (ae.held_by == entity_id) {
+ // Re-entrant acquire: caller already owns it (e.g. ULTIMATE
+ // re-acquiring artifacts already in their inventory). Treat
+ // as success and make sure the wait-for graph is clean so
+ // the deadlock detector doesn't see a self-wait cycle.
+ wfg.holding[entity_id][aidx] = 1;
+ wfg.waiting_for[entity_id] = -1;
+ pthread_mutex_unlock(&rt.table_mutex);
+ return true;
  } else {
  wfg.waiting_for[entity_id] = aidx;
  char msg[LOG_LEN];
@@ -411,8 +420,20 @@ static void maybe_start_weapon_drop(int killer_id, int dead_enemy_id) {
  return;
  }
 
- // Changed probability to 100% for testing inventory/LT storage
- if ((rand() % 100) >= 100) {
+ // ───── BEGIN TEST DROPS (delete this block to restore prod behaviour) ─────
+ // For testing: 100% drop rate, and force-drop Solar Core + Lunar Blade
+ // exactly once each across the whole run before reverting to the
+ // random pool. Set TEST_DROPS_ENABLED to 0 to disable without deleting.
+ #define TEST_DROPS_ENABLED 1
+ #if TEST_DROPS_ENABLED
+ const int test_drop_chance = 100; // 100 = always drop
+ static bool test_solar_dropped = false;
+ static bool test_lunar_dropped = false;
+ #else
+ const int test_drop_chance = 30; // production rate
+ #endif
+
+ if ((rand() % 100) >= test_drop_chance) {
  snprintf(msg, LOG_LEN, "[DROP] %s dropped nothing.", dead_enemy.name);
  g_state->log.push(msg);
  return;
@@ -422,7 +443,32 @@ static void maybe_start_weapon_drop(int killer_id, int dead_enemy_id) {
  WPN_IRON_HALBERD, WPN_VENOM_DAGGER, WPN_THUNDERSTAFF,
  WPN_OBSIDIAN_AXE, WPN_FROSTBOW, WPN_SPLINTER_STICK
  };
- WeaponID dropped = drop_pool[rand() % 6];
+ WeaponID dropped;
+ #if TEST_DROPS_ENABLED
+ // Guarantee one Solar Core and one Lunar Blade drop per run, but only
+ // if the artifact table actually still has them available.
+ auto artifact_available = [&](WeaponID w) -> bool {
+ pthread_mutex_lock(&g_state->resource_table.table_mutex);
+ int aidx = g_state->resource_table.find(w);
+ bool ok = (aidx >= 0)
+ && g_state->resource_table.entries[aidx].exists
+ && g_state->resource_table.entries[aidx].held_by < 0;
+ pthread_mutex_unlock(&g_state->resource_table.table_mutex);
+ return ok;
+ };
+ if (!test_solar_dropped && artifact_available(WPN_SOLAR_CORE)) {
+ dropped = WPN_SOLAR_CORE;
+ test_solar_dropped = true;
+ } else if (!test_lunar_dropped && artifact_available(WPN_LUNAR_BLADE)) {
+ dropped = WPN_LUNAR_BLADE;
+ test_lunar_dropped = true;
+ } else {
+ dropped = drop_pool[rand() % 6];
+ }
+ #else
+ dropped = drop_pool[rand() % 6];
+ #endif
+ // ───── END TEST DROPS ────────────────────────────────────────────────────
  g_state->weapon_drop_pending = true;
  g_state->weapon_drop_id = dropped;
  g_state->weapon_drop_for = killer_id;
@@ -1159,6 +1205,11 @@ static void* render_thread(void*) {
 
  // Persistent UI state: which enemy index (0..ne-1) is the current target.
  int sel_target_idx = 0;
+ // LT-storage swap-in picker modal. Render-thread-local; opened by V,
+ // closed by V/ESC or by selecting a slot via number key. Auto-closes
+ // when the active player changes (turn ends).
+ bool lt_picker_open = false;
+ int lt_picker_owner = -1;
  // Activity-log scroll offset (0 = follow newest line).
  int log_scroll_offset = 0;
  // Number of currently valid log lines in the ring buffer.
@@ -1244,6 +1295,37 @@ static void* render_thread(void*) {
  int kc = ch;
  if (kc >= 'A' && kc <= 'Z') kc = kc - 'A' + 'a';
 
+ // Close picker if active player changed (turn ended) since it opened.
+ if (lt_picker_open && active != lt_picker_owner) {
+ lt_picker_open = false;
+ lt_picker_owner = -1;
+ }
+
+ // ── LT picker modal: intercept all input while open. ────────
+ bool picker_handled = false;
+ if (lt_picker_open) {
+ picker_handled = true;
+ Entity& me = g_state->entities[active];
+ Inventory& inv_pk = me.inventory;
+ if (kc == 27 || kc == 'v') {
+ // Cancel
+ lt_picker_open = false;
+ lt_picker_owner = -1;
+ } else if (kc >= '1' && kc <= '9') {
+ int idx = kc - '1';
+ if (idx >= 0 && idx < inv_pk.lt_count) {
+ req.action = ACT_SWAP_IN;
+ req.weapon = (WeaponID)inv_pk.lt_storage[idx];
+ got = true;
+ }
+ // Close the picker even on out-of-range number so the player
+ // doesn't get stuck if they typo'd.
+ lt_picker_open = false;
+ lt_picker_owner = -1;
+ }
+ // Any other key while picker is open: swallow (no game action).
+ }
+
  // Left/Right arrows cycle target (intuitive for the player).
  auto cycle_target_dir = [&](int step) {
  int ne_loc = g_state->num_enemies;
@@ -1256,6 +1338,9 @@ static void* render_thread(void*) {
  }
  };
 
+ // Skip the regular action switch entirely while the LT picker
+ // modal is consuming input.
+ if (!picker_handled)
  switch (kc) {
  // ── Target selection via arrows ──
  case KEY_LEFT: cycle_target_dir(-1); break;
@@ -1344,13 +1429,21 @@ static void* render_thread(void*) {
  break;
  }
  case 'v': {
- // Swap-in: pull first weapon from LT storage.
+ // Open the LT-storage picker modal. The render thread will
+ // draw an overlay listing LT contents with numeric prefixes;
+ // the next 1..9 keypress submits the swap-in (or V/ESC cancels).
  Entity& me = g_state->entities[active];
  Inventory& inv = me.inventory;
  if (inv.lt_count > 0) {
- req.action = ACT_SWAP_IN;
- req.weapon = (WeaponID)inv.lt_storage[0];
- got = true;
+ lt_picker_open = true;
+ lt_picker_owner = active;
+ } else {
+ char lmsg[LOG_LEN];
+ snprintf(lmsg, LOG_LEN,
+ "[%s] LT storage empty - pick up a weapon when "
+ "inventory is full to evict one to LT.",
+ me.name);
+ g_state->log.push(lmsg);
  }
  break;
  }
@@ -2022,7 +2115,7 @@ static void* render_thread(void*) {
  mvprintw(ctrl_y+1, 1, "<-/->: pick target    ");
  mvprintw(ctrl_y+2, 1, "1:Strike 2:Exhaust    ");
  mvprintw(ctrl_y+3, 1, "3:AoE  4-9:Use Weapon ");
- mvprintw(ctrl_y+4, 1, "V:swap-in  H:heal     ");
+ mvprintw(ctrl_y+4, 1, "V:LT-pick  H:heal     ");
  mvprintw(ctrl_y+5, 1, "Spc:skip   U:ultimate ");
  mvprintw(ctrl_y+6, 1, "P:pick up  Q:quit     ");
  attroff(COLOR_PAIR(CP_LOG));
@@ -2230,6 +2323,53 @@ static void* render_thread(void*) {
  attron(COLOR_PAIR(CP_ULT) | A_BOLD | A_BLINK);
  mvprintw(rows/2, cols/2 - 16, "*** CHRONO BURST — 10s WINDOW ***");
  attroff(COLOR_PAIR(CP_ULT) | A_BOLD | A_BLINK);
+ }
+
+ // ── LT swap-in picker overlay ──────────────────────────────
+ // Drawn last (above other panels) so it's always on top.
+ if (lt_picker_open && lt_picker_owner >= 0 && lt_picker_owner < np) {
+ Inventory& pkinv = snap.entities[lt_picker_owner].inventory;
+ int max_show = std::min(9, pkinv.lt_count);
+ int box_w = 44;
+ int box_h = max_show + 5;
+ int by = std::max(1, (rows - box_h) / 2);
+ int bx = std::max(2, (cols - box_w) / 2);
+
+ // Blank the box area for readability
+ attron(COLOR_PAIR(CP_BORDER) | A_BOLD);
+ for (int r = 0; r < box_h; ++r) {
+ mvprintw(by + r, bx, "%*s", box_w, "");
+ }
+ // Border
+ mvhline(by, bx, ACS_HLINE, box_w);
+ mvhline(by + box_h - 1, bx, ACS_HLINE, box_w);
+ mvvline(by, bx, ACS_VLINE, box_h);
+ mvvline(by, bx + box_w - 1, ACS_VLINE, box_h);
+ mvaddch(by, bx, ACS_ULCORNER);
+ mvaddch(by, bx + box_w - 1, ACS_URCORNER);
+ mvaddch(by + box_h - 1, bx, ACS_LLCORNER);
+ mvaddch(by + box_h - 1, bx + box_w - 1, ACS_LRCORNER);
+ attroff(COLOR_PAIR(CP_BORDER) | A_BOLD);
+
+ attron(COLOR_PAIR(CP_GOLD) | A_BOLD);
+ mvprintw(by + 1, bx + 2, " SWAP-IN FROM LT STORAGE ");
+ attroff(COLOR_PAIR(CP_GOLD) | A_BOLD);
+
+ for (int k = 0; k < max_show; ++k) {
+ WeaponID w = (WeaponID)pkinv.lt_storage[k];
+ int cp_w = WEAPON_TABLE[w].is_artifact ? CP_ARTIFACT : CP_LOG;
+ attron(COLOR_PAIR(cp_w) | A_BOLD);
+ mvprintw(by + 3 + k, bx + 2, " [%d] %-16s d%-2d sz%d",
+ k + 1,
+ WEAPON_TABLE[w].name,
+ WEAPON_TABLE[w].damage,
+ WEAPON_TABLE[w].slot_size);
+ attroff(COLOR_PAIR(cp_w) | A_BOLD);
+ }
+ attron(COLOR_PAIR(CP_BORDER));
+ mvprintw(by + box_h - 2, bx + 2,
+ "Press 1-%d to swap-in, V/ESC to cancel.", max_show);
+ attroff(COLOR_PAIR(CP_BORDER));
  }
 
  // ── Full-screen GAME-OVER screens ──
