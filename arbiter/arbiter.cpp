@@ -2623,21 +2623,24 @@ static void lobby_screen(int &out_players, int &out_roll, int &out_level, bool &
  // 0 = Solo, 1 = Multiplayer (auto-locks 2 players, two HIP processes).
  int mode = 0;
  int prev_focus = -1;
+ bool first_digit_entry = false;
 
  while (true) {
  if (focus != prev_focus) {
+ if (focus == 2) first_digit_entry = true;
  prev_focus = focus;
  }
  // Multiplayer locks players to >= 2 (so two HIP processes are spawned).
  if (mode == 1 && players < 2) players = 2;
 
- for (int i = 0; i < 3; ++i) {
+ for (int i = 0; i < 4; ++i) {
  int y = 15 + i * 2;
  char label[64];
  if (i==0) snprintf(label, sizeof(label), "  Mode:              [ %s ]",
  mode == 1 ? "MULTIPLAYER (2P)" : "SOLO            ");
  else if (i==1) snprintf(label, sizeof(label), "  Players (%d-%d):    [ %d ]",
  mode == 1 ? 2 : 1, MAX_PLAYERS, players);
+ else if (i==2) snprintf(label, sizeof(label), "  Roll Number:       [ %d ]", roll_no);
  else snprintf(label, sizeof(label), "  Difficulty (1-5):  [ %d ]", level);
 
  if (focus == i) {
@@ -2666,18 +2669,29 @@ static void lobby_screen(int &out_players, int &out_roll, int &out_level, bool &
  wrefresh(win);
 
  int c = wgetch(win);
- if (c == 'q' || c == 'Q' || c == 27) { players=1; level=1; mode=0; break; }
- else if (c == KEY_UP || c == 'w' || c == 'W') focus = (focus-1+3)%3;
- else if (c == KEY_DOWN || c == 's' || c == 'S') focus = (focus+1)%3;
+ if (c == 'q' || c == 'Q' || c == 27) { players=1; roll_no=0; level=1; mode=0; break; }
+ else if (c == KEY_UP || c == 'w' || c == 'W') focus = (focus-1+4)%4;
+ else if (c == KEY_DOWN || c == 's' || c == 'S') focus = (focus+1)%4;
  else if (c == KEY_LEFT || c == 'a' || c == 'A') {
  if (focus==0) mode = 0;
  else if (focus==1 && players > (mode == 1 ? 2 : 1)) --players;
- else if (focus==2 && level>1) --level;
+ else if (focus==2 && roll_no>0) --roll_no;
+ else if (focus==3 && level>1) --level;
  }
  else if (c == KEY_RIGHT || c == 'd' || c == 'D') {
  if (focus==0) { mode = 1; if (players < 2) players = 2; }
  else if (focus==1 && players<MAX_PLAYERS) ++players;
- else if (focus==2 && level<5) ++level;
+ else if (focus==2) ++roll_no;
+ else if (focus==3 && level<5) ++level;
+ }
+ else if (c >= '0' && c <= '9') {
+ if (focus == 2) {
+ if (first_digit_entry) { roll_no = (c - '0'); first_digit_entry = false; }
+ else if (roll_no < 100000000) roll_no = roll_no * 10 + (c - '0');
+ }
+ }
+ else if (c == KEY_BACKSPACE || c == 127 || c == 8) {
+ if (focus == 2) roll_no /= 10;
  }
  else if (c == '\n' || c == KEY_ENTER) break;
  }
