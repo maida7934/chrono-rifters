@@ -126,33 +126,14 @@ static void* npc_thread(void* arg_ptr) {
  dist = std::abs(tp.x - me.x) + std::abs(tp.y - me.y);
  }
 
- // RUBRIC: Enemy Behavior & Decision Logic.
- // Check if this enemy holds any usable weapon in primary inventory.
- WeaponID best_wpn = WPN_NONE;
- int best_dmg = 0;
- {
- Inventory& inv = s->entities[slot].inventory;
- int seen[WPN_COUNT] = {};
- for (int si = 0; si < INVENTORY_SLOTS; ++si) {
- int w = inv.slots[si];
- if (w == WPN_NONE || w < 0 || w >= WPN_COUNT || seen[w]) continue;
- seen[w] = 1;
- if (WEAPON_TABLE[w].damage > best_dmg) {
-  best_dmg = WEAPON_TABLE[w].damage;
-  best_wpn = (WeaponID)w;
- }
- }
- }
  pthread_mutex_unlock(&s->global_mutex);
 
+ // RUBRIC: Enemy Behavior & Decision Logic - spec-aligned (STRIKE / SKIP only).
+ // Enemies may hold weapons (picked up from drops) but cannot wield them;
+ // holding a weapon only denies it to the heroes.
  int roll = rand() % 100;
  if (target < 0) {
  req.action = ACT_SKIP;
- } else if (best_wpn != WPN_NONE && roll < 40) {
- // Use the strongest held weapon ~40% of the time
- req.action = ACT_USE_WEAPON;
- req.weapon = best_wpn;
- req.target_id = target;
  } else if (dist <= 4) {
  // Right next to a hero — strike almost always.
  if (roll < 92) {
