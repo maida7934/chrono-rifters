@@ -4,9 +4,9 @@
 // Search this codebase for `RUBRIC:` to jump to the implementation of
 // each rubric item (e.g. RUBRIC: Stamina-Based Scheduling).
 
-#include "../shared/game_state.h"
-#include "../shared/shm_utils.h"
-#include "../shared/allocator.h"
+#include "game_state.h"
+#include "shm_utils.h"
+#include "allocator.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

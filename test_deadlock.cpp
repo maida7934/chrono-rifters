@@ -12,8 +12,8 @@
  * Run:   ./test_deadlock
  */
 
-#include "shared/game_state.h"
-#include "shared/shm_utils.h"
+#include "arbiter/game_state.h"
+#include "arbiter/shm_utils.h"
 #include <cstdio>
 #include <cstring>
 #include <unistd.h>

@@ -3,9 +3,9 @@
 // and submits it to the Arbiter via shared memory.
 //
 // Search `RUBRIC:` to jump to each rubric item this file implements.
-#include "shared/game_state.h"
-#include "shared/shm_utils.h"
-#include "shared/allocator.h"
+#include "arbiter/game_state.h"
+#include "arbiter/shm_utils.h"
+#include "arbiter/allocator.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

@@ -3,7 +3,7 @@ CXXFLAGS := -std=c++17 -Wall -Wextra -g -pthread
 # ncurses for TUI (Section 9). Uncomment SFML/SDL line if switching to GUI.
 LIBS     := -lncurses -lrt -lpthread
 
-SHARED_SRC := shared/weapon_table.cpp
+SHARED_SRC := arbiter/weapon_table.cpp
 
 ARB_SRC  := arbiter/arbiter.cpp $(SHARED_SRC)
 HIP_SRC  := hip/hip.cpp         $(SHARED_SRC)
