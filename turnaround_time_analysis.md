@@ -211,7 +211,7 @@ process — it spends 100% of its waiting time blocked on `cond_wait`.
 
 ## 8. Empirical sanity check
 
-A 60-second solo run with `roll_no = 1234`, difficulty 1, recorded by
+A 60-second solo run with `roll_no = 240652`, difficulty 1, recorded by
 the activity log (`action_log_dump.txt`) typically shows:
 
 - ~55 player actions (~0.9 s wall-clock between user keypresses)
