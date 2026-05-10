@@ -198,7 +198,7 @@ static void* player_thread(void* arg_ptr) {
  // If ncurses UI active, just wait for render_thread to inject action
  if (s->use_ncurses_ui) {
  while (s->active_entity == pidx && !s->player_actions[pidx].ready &&
- s->phase == PHASE_RUNNING && g_running) {
+ (s->phase == PHASE_RUNNING || s->phase == PHASE_ULTIMATE_PAUSE) && g_running) {
  if (consume_ui_quit_request_locked(s, pidx)) {
  pthread_mutex_unlock(&s->global_mutex);
  kill(s->arbiter_pid, SIGTERM);

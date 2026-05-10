@@ -1261,7 +1261,19 @@ static void* render_thread(void*) {
  int np = g_state->num_players;
  GamePhase ph = g_state->phase;
 
- if (ph == PHASE_RUNNING && active >= 0 && active < np) {
+ // Gate on the displayed (interpolated) bar being full, not just the internal value.
+ // This enforces the 1s/2s/3s/4s real-time refill for 1/2/3/4 players.
+ bool player_bar_full = false;
+ if (active >= 0 && active < np) {
+ float disp_sp = g_base_stamina[active]
+ + g_state->entities[active].speed
+ * (float)(wallclock_sec() - g_action_walltime);
+ if (disp_sp > g_state->entities[active].max_stamina)
+ disp_sp = g_state->entities[active].max_stamina;
+ player_bar_full = (disp_sp >= g_state->entities[active].max_stamina);
+ }
+ if ((ph == PHASE_RUNNING || ph == PHASE_ULTIMATE_PAUSE) && active >= 0 && active < np &&
+ player_bar_full) {
  // Only queue if no action is already pending
  if (!g_state->player_actions[active].ready) {
  ActionRequest req;
@@ -2866,15 +2878,6 @@ int main(int argc, char* argv[]) {
  pthread_mutex_unlock(&g_state->global_mutex);
  break;
  }
- while (g_state->phase == PHASE_ULTIMATE_PAUSE)
- pthread_cond_wait(&g_state->turn_cond, &g_state->global_mutex);
-
- if (g_state->phase == PHASE_QUIT ||
- g_state->phase == PHASE_WIN ||
- g_state->phase == PHASE_LOSE) {
- pthread_mutex_unlock(&g_state->global_mutex);
- break;
- }
 
  int next = scheduler_next();
  if (next < 0) {
@@ -2897,6 +2900,13 @@ int main(int argc, char* argv[]) {
  Entity& actor = g_state->entities[next];
  snprintf(msg, LOG_LEN, ">> [%s]'s turn (t=%.2f)", actor.name, g_state->virtual_time);
  g_state->log.push(msg);
+ // During Ultimate pause ASP is SIGSTOP-ed — auto-skip enemy turns instantly.
+ if (actor.type == ENT_ENEMY && g_state->phase == PHASE_ULTIMATE_PAUSE) {
+ actor.stamina = 0;
+ g_state->active_entity = -1;
+ pthread_mutex_unlock(&g_state->global_mutex);
+ continue;
+ }
  pthread_mutex_unlock(&g_state->global_mutex);
 
  // Wait for action
@@ -2906,7 +2916,7 @@ int main(int argc, char* argv[]) {
  int pid_idx = actor.id;
  pthread_mutex_lock(&g_state->global_mutex);
  while (!g_state->player_actions[pid_idx].ready) {
- if (g_state->phase != PHASE_RUNNING) {
+ if (g_state->phase != PHASE_RUNNING && g_state->phase != PHASE_ULTIMATE_PAUSE) {
  pthread_mutex_unlock(&g_state->global_mutex);
  goto done;
  }
