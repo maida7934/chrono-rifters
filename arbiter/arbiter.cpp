@@ -28,7 +28,9 @@ static SharedState* g_state = nullptr;
 static pid_t g_hip_pid = -1;
 static pid_t g_hip_pid_b = -1; // RUBRIC: Bonus Multiplayer Extension - second HIP process
 static pid_t g_asp_pid = -1;
-static volatile bool g_ultimate_running = false;
+// FIX 1: changed from volatile bool to volatile sig_atomic_t to be safe
+// inside signal handlers and avoid data races with the main thread.
+static volatile sig_atomic_t g_ultimate_running = 0;
 static volatile sig_atomic_t g_sigterm_received=0;
 static volatile sig_atomic_t g_sigalrm_received=0;
 static volatile sig_atomic_t g_sigchld_received=0;
@@ -49,25 +51,23 @@ static void handle_sigalrm(int) { g_sigalrm_received = 1; }
 static void handle_sigchld(int) { g_sigchld_received = 1; }
 
 static void process_pending_signals() {
- if (!g_state) return;
- if (g_sigterm_received) {
- g_sigterm_received = 0;
- g_state->phase = PHASE_QUIT;
- g_state->log.push("[ARBITER] SIGTERM  shutting down.");
- pthread_cond_broadcast(&g_state->turn_cond);
- }
  if (g_sigalrm_received) {
- g_sigalrm_received = 0;
- if (g_ultimate_running) {
- g_ultimate_running = false;
- if (g_asp_pid > 0) kill(g_asp_pid, SIGCONT);
- g_state->log.push("[Arbiter] Ultimate window expired. ASP resumed.");
- g_state->phase = PHASE_RUNNING;
- g_state->ultimate_active = false;
- g_state->active_entity = -1; // invalidate current turn, force reschedule
- pthread_cond_broadcast(&g_state->turn_cond);
- }
- }
+    g_sigalrm_received = 0;
+    // Unconditionally resume ASP and reset phase whenever SIGALRM
+    // fires. Do NOT gate this on g_ultimate_running — that flag can
+    // be stale on the 2nd+ ultimate due to timing, leaving ASP
+    // permanently SIGSTOP-ed. SIGALRM only ever fires from alarm()
+    // inside ACT_ULTIMATE, so this branch is always legitimate.
+    g_ultimate_running = 0;
+    if (g_asp_pid > 0) kill(g_asp_pid, SIGCONT);
+    if (g_state->phase == PHASE_ULTIMATE_PAUSE) {
+        g_state->log.push("[Arbiter] Ultimate window expired. ASP resumed.");
+        g_state->phase = PHASE_RUNNING;
+        g_state->ultimate_active = false;
+        g_state->active_entity = -1;
+        pthread_cond_broadcast(&g_state->turn_cond);
+    }
+}
  if (g_sigchld_received) {
  g_sigchld_received = 0;
  int status; pid_t pid;
@@ -768,6 +768,14 @@ static void apply_action(ActionRequest& req) {
  snprintf(msg, LOG_LEN, "[%s] ULTIMATE BLOCKED: artifact contention", actor.name);
  g_state->log.push(msg); actor.stamina = 0; break;
  }
+ // Guard: already in ultimate window — should not happen, but be safe.
+ if (g_state->phase == PHASE_ULTIMATE_PAUSE) {
+ artifact_release(req.entity_id, WPN_SOLAR_CORE);
+ artifact_release(req.entity_id, WPN_LUNAR_BLADE);
+ snprintf(msg, LOG_LEN, "[%s] ULTIMATE BLOCKED: already in Chrono Burst window",
+ actor.name);
+ g_state->log.push(msg); actor.stamina = 0; break;
+ }
  snprintf(msg, LOG_LEN, "[%s] *** ULTIMATE — CHRONO BURST! ***", actor.name);
  g_state->log.push(msg);
  for (int i = 0; i < g_state->num_enemies; ++i) {
@@ -794,15 +802,11 @@ static void apply_action(ActionRequest& req) {
  }
  }
  }
- if (g_state->phase == PHASE_ULTIMATE_PAUSE) {
- snprintf(msg, LOG_LEN, "[%s] ULTIMATE BLOCKED: already in Chrono Burst window",
- actor.name);
- g_state->log.push(msg); actor.stamina = 0; break;
- }
+ alarm(0);
  if (g_asp_pid > 0) kill(g_asp_pid, SIGSTOP);
  g_state->phase = PHASE_ULTIMATE_PAUSE;
  g_state->ultimate_active = true;
- g_ultimate_running = true;
+ g_ultimate_running = 1;
  alarm((unsigned int)ULTIMATE_PAUSE);
  artifact_release(req.entity_id, WPN_SOLAR_CORE);
  artifact_release(req.entity_id, WPN_LUNAR_BLADE);
@@ -2878,6 +2882,7 @@ int main(int argc, char* argv[]) {
  while (true) {
  reschedule:
  pthread_mutex_lock(&g_state->global_mutex);
+ process_pending_signals();
 
  if (g_state->phase == PHASE_QUIT ||
  g_state->phase == PHASE_WIN ||
@@ -2932,9 +2937,25 @@ int main(int argc, char* argv[]) {
  pthread_mutex_unlock(&g_state->global_mutex);
  goto reschedule;
  }
- // Render thread broadcasts turn_cond when player presses a key.
- // This eliminates the 200Hz busy-poll and reduces mutex contention.
- pthread_cond_wait(&g_state->turn_cond, &g_state->global_mutex);
+ // FIX 2 & 3: Use a short 25ms timeout so process_pending_signals()
+ // is called frequently. This ensures the SIGALRM that fires when the
+ // ultimate window expires (setting g_sigalrm_received) is processed
+ // promptly even while the main thread is blocked waiting for player
+ // input. Without this, the game freezes because pthread_cond_timedwait
+ // on Linux is not interrupted by signals, so a long timeout means
+ // g_sigalrm_received sits unprocessed and PHASE_RUNNING is never restored.
+ struct timespec twait;
+ clock_gettime(CLOCK_REALTIME, &twait);
+ twait.tv_nsec += 25000000; // 25ms (was 100ms)
+ if (twait.tv_nsec >= 1000000000) { twait.tv_sec += 1; twait.tv_nsec -= 1000000000; }
+ pthread_cond_timedwait(&g_state->turn_cond, &g_state->global_mutex, &twait);
+ // FIX 3: Process any pending signals (especially SIGALRM) immediately
+ // after the wait returns, whether by timeout or broadcast. This is the
+ // core fix: without calling process_pending_signals() here, the SIGALRM
+ // handler sets g_sigalrm_received=1 but nobody reads it until the next
+ // top-of-loop call, which never comes because we are stuck in this inner
+ // wait loop for the duration of the ultimate window.
+ process_pending_signals();
  }
  req = g_state->player_actions[pid_idx];
  g_state->player_actions[pid_idx].ready = false;
